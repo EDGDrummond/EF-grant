@@ -285,18 +285,17 @@ name = "halo2"
 version = "0.1.0"
 dependencies = [
  "assert_matches",
- "cfg-if 0.1.10",
  "criterion",
- "ff",
- "group",
  "halo2_proofs",
  "pairing_bn256",
  "rand_core",
+ "rayon",
 ]
 
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
+source = "git+https://github.com/privacy-scaling-explorations/halo2.git#ad425ed3d12a952871a5c4facc9c2c0d884afe07"
 dependencies = [
  "blake2b_simd",
  "bumpalo",

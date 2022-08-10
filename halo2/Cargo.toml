@@ -6,12 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-halo2_proofs = {path = "../../halo2/halo2_proofs"}
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git" }
+rayon = "1.5.1"
 rand_core = { version = "0.6", default-features = false }
 pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256", "tag" = "v0.1.1"}
-group = "0.11"
-ff = "0.11"
-cfg-if = "0.1"
 
 [dev-dependencies]
 assert_matches = "1.5"

@@ -1,0 +1,11 @@
+group,function,value,throughput_num,throughput_type,sample_measured_value,unit,iteration_count
+proof_gen_group,,8,,,126915916.0,ns,2
+proof_gen_group,,8,,,250604500.0,ns,4
+proof_gen_group,,8,,,381130958.0,ns,6
+proof_gen_group,,8,,,506023666.0,ns,8
+proof_gen_group,,8,,,625917291.0,ns,10
+proof_gen_group,,8,,,771438916.0,ns,12
+proof_gen_group,,8,,,915722958.0,ns,14
+proof_gen_group,,8,,,1086348625.0,ns,16
+proof_gen_group,,8,,,1348950125.0,ns,18
+proof_gen_group,,8,,,1333063500.0,ns,20

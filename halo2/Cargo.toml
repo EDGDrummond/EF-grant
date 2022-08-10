@@ -1,0 +1,26 @@
+[package]
+name = "halo2"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+halo2_proofs = {path = "../../halo2/halo2_proofs"}
+rand_core = { version = "0.6", default-features = false }
+pairing = { git = 'https://github.com/appliedzkp/pairing', package = "pairing_bn256", "tag" = "v0.1.1"}
+group = "0.11"
+ff = "0.11"
+cfg-if = "0.1"
+
+[dev-dependencies]
+assert_matches = "1.5"
+criterion = "0.3"
+
+[[bench]]
+name = "iszero"
+harness = false
+
+[[bench]]
+name = "iszero-mock"
+harness = false

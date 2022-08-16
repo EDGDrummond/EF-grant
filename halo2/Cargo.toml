@@ -16,9 +16,17 @@ assert_matches = "1.5"
 criterion = "0.3"
 
 [[bench]]
-name = "iszero"
+name = "iszero-mock"
 harness = false
 
 [[bench]]
-name = "iszero-mock"
+name = "iszero2"
+harness = false
+
+[[bench]]
+name = "iszero3"
+harness = false
+
+[[bench]]
+name = "iszero6"
 harness = false

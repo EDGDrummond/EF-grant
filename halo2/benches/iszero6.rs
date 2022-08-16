@@ -281,7 +281,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let params_verifier: ParamsVerifier<Bn256> = params.verifier(public_inputs_size).unwrap();
 
     // Initialise the benching parameter
-    let i_range = 8..=8;
+    let i_range = 14..=16;
 
     // Prepare benching for verifier key generation
     let mut verifier_key_generation = c.benchmark_group("verifier_key_generation");

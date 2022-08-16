@@ -10,3 +10,6 @@ where the _ represents the size of the circuit. For example 3 would be a circuit
 
 NOTE: if you wish to learn the size of any of the circuits, simply run (inserting the desired path)
 `time circom ../4/iszero4.circom --r1cs`
+
+NOTE: Due to the large file sizes of the powers of tau, these had to be saved via git Large 
+File Storage (LFS)

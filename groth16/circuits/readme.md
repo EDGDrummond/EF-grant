@@ -4,7 +4,8 @@ delete created files once done. Below is a description of the steps we need to w
 
 
 NOTE: Benching was achieved by installing bench via Haskell's stack tool.
-In order to run the benchmarking choose the circuit size you want to bench and run
+In order to run the benchmarking choose the circuit size you want to bench and run (assuming you're in the
+'benchmarks' folder)
 `bash bench_.sh`
 where the _ represents the size of the circuit. For example 3 would be a circuit of size 10^3
 

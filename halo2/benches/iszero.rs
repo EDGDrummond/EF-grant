@@ -227,11 +227,16 @@ fn criterion_benchmark(c: &mut Criterion) {
         ) -> Result<(), Error> {
             let cs = StandardPlonk::new(config);
 
-            for _ in 0..333333 {
-                let inv = if self.a.unwrap() == F::zero() {
-                    Some(F::zero())
-                } else {
-                    Some(-self.a.clone().unwrap().invert().unwrap())
+            for _ in 0..(((1 << self.k) / 3) - 2) {
+                let inv = match self.a {
+                    Some(p) => {
+                        if p == F::zero() {
+                            Some(F::zero())
+                        } else {
+                            Some(-self.a.clone().unwrap().invert().unwrap())
+                        }
+                    }
+                    None => Some(F::zero()),
                 };
                 // first gate, the mul gate
                 let (_a1, b1, c1) = cs.raw_multiply(&mut layouter, || {
@@ -263,34 +268,26 @@ fn criterion_benchmark(c: &mut Criterion) {
                 cs.copy(&mut layouter, b1, b3).unwrap();
             }
 
-            // println!("size: {:?}", config.a.len());
-
             Ok(())
         }
     }
 
     // Initialise parameters for the circuit
-    let k = 20;
     let public_inputs_size = 0;
     let a_value = Some(Fp::from(100000));
 
-    let empty_circuit: MyCircuit<Fp> = MyCircuit { a: a_value, k };
-
-    // Initialize the polynomial commitment parameters
-    let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(k);
-    let params_verifier: ParamsVerifier<Bn256> = params.verifier(public_inputs_size).unwrap();
-
     // Initialise the benching parameter
-    let i_range = 14..=16;
+    let k_range = 8..=10;
 
     // Prepare benching for verifier key generation
-    let mut verifier_key_generation = c.benchmark_group("verifier_key_generation");
+    let mut verifier_key_generation = c.benchmark_group("Verifier Key Generation");
     verifier_key_generation.sample_size(10);
-    for i in i_range.clone() {
+    for k in k_range.clone() {
+        let empty_circuit: MyCircuit<Fp> = MyCircuit { a: None, k };
         let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(k);
-        let empty_circuit: MyCircuit<Fp> = MyCircuit { a: a_value, k };
+
         verifier_key_generation.bench_with_input(
-            BenchmarkId::from_parameter(i),
+            BenchmarkId::from_parameter(k),
             &(&params, &empty_circuit),
             |b, &(params, empty_circuit)| {
                 b.iter(|| {
@@ -302,13 +299,14 @@ fn criterion_benchmark(c: &mut Criterion) {
     verifier_key_generation.finish();
 
     // Prepare benching for prover key generation
-    let mut prover_key_generation = c.benchmark_group("prover_key_generation");
+    let mut prover_key_generation = c.benchmark_group("Prover Key Generation");
     prover_key_generation.sample_size(10);
-    for i in i_range.clone() {
+    for k in k_range.clone() {
+        let empty_circuit: MyCircuit<Fp> = MyCircuit { a: None, k };
         let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(k);
-        let empty_circuit: MyCircuit<Fp> = MyCircuit { a: a_value, k };
+
         prover_key_generation.bench_with_input(
-            BenchmarkId::from_parameter(i),
+            BenchmarkId::from_parameter(k),
             &(&params, &empty_circuit),
             |b, &(params, empty_circuit)| {
                 b.iter(|| {
@@ -320,18 +318,19 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
     prover_key_generation.finish();
 
-    // Initialise the keys
-    let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
-    let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
-
     // Prepare benching for proof generation
-    let mut proof_generation = c.benchmark_group("proof_generation");
+    let mut proof_generation = c.benchmark_group("Proof Generation");
     proof_generation.sample_size(10);
-    for i in i_range.clone() {
+    for k in k_range.clone() {
+        let empty_circuit: MyCircuit<Fp> = MyCircuit { a: None, k };
+        let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(k);
+        let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
+        let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
         let circuit: MyCircuit<Fp> = MyCircuit { a: a_value, k };
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+
         proof_generation.bench_with_input(
-            BenchmarkId::from_parameter(i),
+            BenchmarkId::from_parameter(k),
             &(&params, &pk),
             |b, &(params, pk)| {
                 b.iter(|| {
@@ -350,20 +349,23 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
     proof_generation.finish();
 
-    // Create a proof to use for verification
-    let circuit: MyCircuit<Fp> = MyCircuit { a: a_value, k };
-    let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-    create_proof(&params, &pk, &[circuit], &[&[]], OsRng, &mut transcript)
-        .expect("proof generation should not fail");
-
-    let proof = transcript.finalize();
-    let transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-
     // Prepare benching for proof verification
-    let mut proof_verification = c.benchmark_group("proof_verification");
+    let mut proof_verification = c.benchmark_group("Proof Verification");
     proof_verification.sample_size(10);
-    for i in i_range.clone() {
-        proof_verification.bench_with_input(BenchmarkId::from_parameter(i), &(), |b, ()| {
+    for k in k_range.clone() {
+        let empty_circuit: MyCircuit<Fp> = MyCircuit { a: None, k };
+        let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(k);
+        let params_verifier: ParamsVerifier<Bn256> = params.verifier(public_inputs_size).unwrap();
+        let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
+        let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
+        let circuit: MyCircuit<Fp> = MyCircuit { a: a_value, k };
+        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        create_proof(&params, &pk, &[circuit], &[&[]], OsRng, &mut transcript)
+            .expect("proof generation should not fail");
+        let proof = transcript.finalize();
+        let transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+
+        proof_verification.bench_with_input(BenchmarkId::from_parameter(k), &(), |b, ()| {
             b.iter(|| {
                 verify_proof(
                     &params_verifier,

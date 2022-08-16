@@ -262,8 +262,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 cs.copy(&mut layouter, b1, b3).unwrap();
             }
 
-            // println!("size: {:?}", config.a.len());
-
             Ok(())
         }
     }

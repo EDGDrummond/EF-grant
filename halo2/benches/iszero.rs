@@ -277,7 +277,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let a_value = Some(Fp::from(100000));
 
     // Initialise the benching parameter
-    let k_range = 8..=10;
+    let k_range = 10..=10;
 
     // Prepare benching for verifier key generation
     let mut verifier_key_generation = c.benchmark_group("Verifier Key Generation");

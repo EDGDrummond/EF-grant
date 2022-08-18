@@ -1,7 +1,6 @@
 Commands to run and verify halo circuits in this folder. The circuit to be benched (alongside its name)
-should be seen in the cargo file. Then we can run the command below with the relevant benching target
-
-Insert the desired circuit sizes to be benched via the k_range parameter in the benching file
+should be seen in the cargo file. Insert the desired circuit sizes to be benched via the k_range parameter
+in the benching file. Then we can run the command below with the relevant benching target:
 
 cargo criterion --bench iszero
 
@@ -9,7 +8,7 @@ Alternatively run the below command to bench all
 
 cargo criterion --benches
 
-NOTE: prover key geneartion requires verifier key generation as part of its time
+NOTE: prover key geneartion conducts verifier key generation as part of its time
 
 IsZero() at 2^14 constraints:
 Verifier Key Generation:   [168.32 ms 168.94 ms 169.75 ms]

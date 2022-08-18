@@ -1,4 +1,2 @@
 # EF-grant
 This repo contains the code created as part of a grant with EF's PSE team. The grant involves creating equivalent circuits in Halo2 and Groth16 (circom), and then benching and comparing the times of these circuits. For example, one of the circuits is a range gate. Also created a simple Halo2 explainer book for new devs who want to write circuits (will keep making the book better over time)
-
-In order to run the benching run the command `cargo criterion --bench file-name`

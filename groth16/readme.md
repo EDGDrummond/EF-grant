@@ -12,6 +12,10 @@ where the _ represents the size of the circuit. For example 3 would be a circuit
 NOTE: Due to the large file sizes of the powers of tau, these had to be saved via git Large 
 File Storage (LFS)
 
+TO-DO: When using the time command for circuit set-up, the 'user' time is more than the 'real' time.
+The former shuld always be less than the latter, something glitched. Probably because we are timing 3 
+commands and not 1. Need to fix - also need to bench several rather than time 1
+
 
 IsZero() at 2^14 constraints:
 circuit compilation:    real    0m1.273s   user    0m0.962s

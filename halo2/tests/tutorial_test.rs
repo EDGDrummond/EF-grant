@@ -1,15 +1,17 @@
 use std::marker::PhantomData;
 
-use halo2_proofs::dev::MockProver;
+// halo2wrong = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git" }
+
+use halo2_proofs::circuit::Value;
+use halo2_proofs::plonk::Assigned;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Cell, Chip, Layouter, SimpleFloorPlanner},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance},
     poly::Rotation,
 };
-use pairing::bn256::Fr as Fp;
 
-#[allow(non_snake_case, dead_code)]
+#[allow(non_snake_case)]
 #[derive(Debug, Clone)]
 struct TutorialConfig {
     l: Column<Advice>,
@@ -20,8 +22,6 @@ struct TutorialConfig {
     sr: Column<Fixed>,
     so: Column<Fixed>,
     sm: Column<Fixed>,
-    sc: Column<Fixed>,
-    sp: Column<Fixed>,
     PI: Column<Instance>,
 }
 
@@ -59,15 +59,25 @@ trait TutorialComposer<F: FieldExt> {
         f: FM,
     ) -> Result<(Cell, Cell, Cell), Error>
     where
-        FM: FnMut() -> Result<(F, F, F), Error>;
+        FM: FnMut() -> Value<(Assigned<F>, Assigned<F>, Assigned<F>)>;
+
     fn raw_add<FM>(
         &self,
         layouter: &mut impl Layouter<F>,
         f: FM,
     ) -> Result<(Cell, Cell, Cell), Error>
     where
-        FM: FnMut() -> Result<(F, F, F), Error>;
+        FM: FnMut() -> Value<(Assigned<F>, Assigned<F>, Assigned<F>)>;
+
     fn copy(&self, layouter: &mut impl Layouter<F>, a: Cell, b: Cell) -> Result<(), Error>;
+
+    /// Exposes a number as a public input to the circuit.
+    fn expose_public(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        cell: Cell,
+        row: usize,
+    ) -> Result<(), Error>;
 }
 
 impl<F: FieldExt> TutorialComposer<F> for TutorialChip<F> {
@@ -77,7 +87,7 @@ impl<F: FieldExt> TutorialComposer<F> for TutorialChip<F> {
         mut f: FM,
     ) -> Result<(Cell, Cell, Cell), Error>
     where
-        FM: FnMut() -> Result<(F, F, F), Error>,
+        FM: FnMut() -> Value<(Assigned<F>, Assigned<F>, Assigned<F>)>,
     {
         layouter.assign_region(
             || "mul",
@@ -88,26 +98,26 @@ impl<F: FieldExt> TutorialComposer<F> for TutorialChip<F> {
                     self.config.l,
                     0,
                     || {
-                        values = Some(f()?);
-                        Ok(values.ok_or(Error::Synthesis)?.0)
+                        values = Some(f());
+                        values.unwrap().map(|v| v.0)
                     },
                 )?;
                 let rhs = region.assign_advice(
                     || "rhs",
                     self.config.r,
                     0,
-                    || Ok(values.ok_or(Error::Synthesis)?.1),
+                    || values.unwrap().map(|v| v.1),
                 )?;
 
                 let out = region.assign_advice(
                     || "out",
                     self.config.o,
                     0,
-                    || Ok(values.ok_or(Error::Synthesis)?.2),
+                    || values.unwrap().map(|v| v.2),
                 )?;
 
-                region.assign_fixed(|| "m", self.config.sm, 0, || Ok(F::one()))?;
-                region.assign_fixed(|| "o", self.config.so, 0, || Ok(F::one()))?;
+                region.assign_fixed(|| "m", self.config.sm, 0, || Value::known(F::one()))?;
+                region.assign_fixed(|| "o", self.config.so, 0, || Value::known(F::one()))?;
 
                 Ok((lhs.cell(), rhs.cell(), out.cell()))
             },
@@ -120,7 +130,7 @@ impl<F: FieldExt> TutorialComposer<F> for TutorialChip<F> {
         mut f: FM,
     ) -> Result<(Cell, Cell, Cell), Error>
     where
-        FM: FnMut() -> Result<(F, F, F), Error>,
+        FM: FnMut() -> Value<(Assigned<F>, Assigned<F>, Assigned<F>)>,
     {
         layouter.assign_region(
             || "mul",
@@ -131,27 +141,27 @@ impl<F: FieldExt> TutorialComposer<F> for TutorialChip<F> {
                     self.config.l,
                     0,
                     || {
-                        values = Some(f()?);
-                        Ok(values.ok_or(Error::Synthesis)?.0)
+                        values = Some(f());
+                        values.unwrap().map(|v| v.0)
                     },
                 )?;
                 let rhs = region.assign_advice(
                     || "rhs",
                     self.config.r,
                     0,
-                    || Ok(values.ok_or(Error::Synthesis)?.1),
+                    || values.unwrap().map(|v| v.1),
                 )?;
 
                 let out = region.assign_advice(
                     || "out",
                     self.config.o,
                     0,
-                    || Ok(values.ok_or(Error::Synthesis)?.2),
+                    || values.unwrap().map(|v| v.2),
                 )?;
 
-                region.assign_fixed(|| "l", self.config.sl, 0, || Ok(F::one()))?;
-                region.assign_fixed(|| "r", self.config.sr, 0, || Ok(F::one()))?;
-                region.assign_fixed(|| "o", self.config.so, 0, || Ok(F::one()))?;
+                region.assign_fixed(|| "l", self.config.sl, 0, || Value::known(F::one()))?;
+                region.assign_fixed(|| "r", self.config.sr, 0, || Value::known(F::one()))?;
+                region.assign_fixed(|| "o", self.config.so, 0, || Value::known(F::one()))?;
 
                 Ok((lhs.cell(), rhs.cell(), out.cell()))
             },
@@ -167,12 +177,21 @@ impl<F: FieldExt> TutorialComposer<F> for TutorialChip<F> {
             },
         )
     }
+
+    fn expose_public(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        cell: Cell,
+        row: usize,
+    ) -> Result<(), Error> {
+        layouter.constrain_instance(cell, self.config.PI, row)
+    }
 }
 
 #[derive(Default)]
 struct TutorialCircuit<F: FieldExt> {
-    x: Option<F>,
-    y: Option<F>,
+    x: Value<F>,
+    y: Value<F>,
     constant: F,
 }
 
@@ -197,8 +216,6 @@ impl<F: FieldExt> Circuit<F> for TutorialCircuit<F> {
         let sl = meta.fixed_column();
         let sr = meta.fixed_column();
         let so = meta.fixed_column();
-        let sc = meta.fixed_column();
-        let sp = meta.fixed_column();
         #[allow(non_snake_case)]
         let PI = meta.instance_column();
         meta.enable_equality(PI);
@@ -212,18 +229,8 @@ impl<F: FieldExt> Circuit<F> for TutorialCircuit<F> {
             let sr = meta.query_fixed(sr, Rotation::cur());
             let so = meta.query_fixed(so, Rotation::cur());
             let sm = meta.query_fixed(sm, Rotation::cur());
-            let sc = meta.query_fixed(sc, Rotation::cur());
 
-            vec![l.clone() * sl + r.clone() * sr + l * r * sm + (o * so * (-F::one())) + sc]
-        });
-
-        meta.create_gate("Public input", |meta| {
-            let l = meta.query_advice(l, Rotation::cur());
-            #[allow(non_snake_case)]
-            let PI = meta.query_instance(PI, Rotation::cur());
-            let sp = meta.query_fixed(sp, Rotation::cur());
-
-            vec![sp * (l - PI)]
+            vec![l.clone() * sl + r.clone() * sr + l * r * sm + (o * so * (-F::one()))]
         });
 
         TutorialConfig {
@@ -234,8 +241,6 @@ impl<F: FieldExt> Circuit<F> for TutorialCircuit<F> {
             sr,
             so,
             sm,
-            sc,
-            sp,
             PI,
         }
     }
@@ -248,59 +253,37 @@ impl<F: FieldExt> Circuit<F> for TutorialCircuit<F> {
         let cs = TutorialChip::new(config);
 
         // Initialise these values so that we can access them more easily outside the block we actually give them a value in
-        let mut xsquared = None;
-        let mut ysquared = None;
-        let mut xysquared = None;
+        let x: Value<Assigned<_>> = self.x.into();
+        let y: Value<Assigned<_>> = self.y.into();
+        let consty = Assigned::from(self.constant);
 
         // Create x squared
         // Note that the variables named ai for some i are just place holders, meaning that a0 isn't
         // necessarily the first entry in the column a; though in the code we try to make things clear
-        let (a0, b0, c0) = cs.raw_multiply(&mut layouter, || {
-            xsquared = self.x.map(|x| x.square());
-            Ok((
-                self.x.ok_or(Error::Synthesis)?,
-                self.x.ok_or(Error::Synthesis)?,
-                xsquared.ok_or(Error::Synthesis)?,
-            ))
-        })?;
+        let (a0, b0, c0) = cs.raw_multiply(&mut layouter, || x.map(|x| (x, x, x * x)))?;
         cs.copy(&mut layouter, a0, b0)?;
 
         // Create y squared
-        let (a1, b1, c1) = cs.raw_multiply(&mut layouter, || {
-            ysquared = self.y.map(|y| y.square());
-            Ok((
-                self.y.ok_or(Error::Synthesis)?,
-                self.y.ok_or(Error::Synthesis)?,
-                ysquared.ok_or(Error::Synthesis)?,
-            ))
-        })?;
+        let (a1, b1, c1) = cs.raw_multiply(&mut layouter, || y.map(|y| (y, y, y * y)))?;
         cs.copy(&mut layouter, a1, b1)?;
 
         // Create xy squared. Note that we need to use the value xsquared here, hence the initialisation
         let (a2, b2, c2) = cs.raw_multiply(&mut layouter, || {
-            xysquared = xsquared.and_then(|xsquared| self.y.map(|y| y * y * xsquared));
-            Ok((
-                xsquared.ok_or(Error::Synthesis)?,
-                ysquared.ok_or(Error::Synthesis)?,
-                xysquared.ok_or(Error::Synthesis)?,
-            ))
+            x.zip(y).map(|(x, y)| (x * x, y * y, x * x * y * y))
         })?;
         cs.copy(&mut layouter, c0, a2)?;
         cs.copy(&mut layouter, c1, b2)?;
 
         let (a3, b3, c3) = cs.raw_add(&mut layouter, || {
-            let finished = xysquared.and_then(|xysquared| Some(xysquared + self.constant));
-            Ok((
-                xysquared.ok_or(Error::Synthesis)?,
-                Some(self.constant).ok_or(Error::Synthesis)?,
-                finished.ok_or(Error::Synthesis)?,
-            ))
+            x.zip(y)
+                .map(|(x, y)| (x * x * y * y, consty, x * x * y * y + consty))
         })?;
         cs.copy(&mut layouter, c2, a3)?;
 
         // Ensure that the constant in the TutorialCircuit struct is correctly used and that the
         // result of the circuit computation is what is expected.
-        layouter.constrain_instance(b3, cs.config.PI, 0)?;
+        cs.expose_public(&mut layouter, b3, 0)?;
+        // layouter.constrain_instance(b3, cs.config.PI, 0)?;
         layouter.constrain_instance(c3, cs.config.PI, 1)?;
 
         Ok(())
@@ -309,6 +292,9 @@ impl<F: FieldExt> Circuit<F> for TutorialCircuit<F> {
 
 #[test]
 fn main() {
+    use halo2_proofs::dev::MockProver;
+    use halo2_proofs::halo2curves::bn256::Fr as Fp;
+
     // The number of rows in our circuit cannot exceed 2^k. Since our example
     // circuit is very small, we can pick a very small value here.
     let k = 4;
@@ -319,8 +305,8 @@ fn main() {
     let z = Fp::from(25 * 81 + 7);
 
     let circuit: TutorialCircuit<Fp> = TutorialCircuit {
-        x: Some(x),
-        y: Some(y),
+        x: Value::known(x),
+        y: Value::known(y),
         constant: constant,
     };
 
@@ -332,7 +318,7 @@ fn main() {
     assert_eq!(prover.verify(), Ok(()));
 
     // If we try some other public input, the proof will fail!
-    public_inputs[0] += Fp::one();
+    public_inputs[1] += Fp::one();
     let prover = MockProver::run(k, &circuit, vec![public_inputs]).unwrap();
     assert!(prover.verify().is_err());
 }

@@ -1,17 +1,25 @@
 #[macro_use]
 extern crate criterion;
 
+use halo2_proofs::halo2curves::bn256::{Bn256, Fr as Fp, G1Affine};
+use halo2_proofs::poly::commitment::ParamsProver;
+use halo2_proofs::poly::kzg::commitment::KZGCommitmentScheme;
+use halo2_proofs::poly::kzg::commitment::ParamsKZG;
+use halo2_proofs::poly::kzg::multiopen::ProverGWC;
+use halo2_proofs::poly::kzg::multiopen::VerifierGWC;
+use halo2_proofs::poly::kzg::strategy::SingleStrategy;
+use halo2_proofs::transcript::{TranscriptReadBuffer, TranscriptWriterBuffer};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{Cell, Layouter, SimpleFloorPlanner},
+    circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
     plonk::*,
-    poly::{commitment::Params, commitment::ParamsVerifier, Rotation},
+    poly::Rotation,
     transcript::{Blake2bRead, Blake2bWrite, Challenge255},
 };
-use pairing::bn256::{Bn256, Fr as Fp, G1Affine};
 use rand_core::OsRng;
 
 use std::marker::PhantomData;
+use std::ops::Neg;
 
 use criterion::{BenchmarkId, Criterion};
 
@@ -35,20 +43,20 @@ fn criterion_benchmark(c: &mut Criterion) {
             f: F,
         ) -> Result<(Cell, Cell, Cell), Error>
         where
-            F: FnMut() -> Result<(FF, FF, FF), Error>;
+            F: FnMut() -> Value<(Assigned<FF>, Assigned<FF>, Assigned<FF>)>;
         fn raw_add<F>(
             &self,
             layouter: &mut impl Layouter<FF>,
             f: F,
         ) -> Result<(Cell, Cell, Cell), Error>
         where
-            F: FnMut() -> Result<(FF, FF, FF), Error>;
+            F: FnMut() -> Value<(Assigned<FF>, Assigned<FF>, Assigned<FF>)>;
         fn copy(&self, layouter: &mut impl Layouter<FF>, a: Cell, b: Cell) -> Result<(), Error>;
     }
 
     #[derive(Clone)]
     struct MyCircuit<F: FieldExt> {
-        a: Option<F>,
+        a: Value<F>,
         k: u32,
     }
 
@@ -73,7 +81,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             mut f: F,
         ) -> Result<(Cell, Cell, Cell), Error>
         where
-            F: FnMut() -> Result<(FF, FF, FF), Error>,
+            F: FnMut() -> Value<(Assigned<FF>, Assigned<FF>, Assigned<FF>)>,
         {
             layouter.assign_region(
                 || "mul",
@@ -84,28 +92,33 @@ fn criterion_benchmark(c: &mut Criterion) {
                         self.config.a,
                         0,
                         || {
-                            values = Some(f()?);
-                            Ok(values.ok_or(Error::Synthesis)?.0)
+                            values = Some(f());
+                            values.unwrap().map(|v| v.0)
                         },
                     )?;
                     let rhs = region.assign_advice(
                         || "rhs",
                         self.config.b,
                         0,
-                        || Ok(values.ok_or(Error::Synthesis)?.1),
+                        || values.unwrap().map(|v| v.1),
                     )?;
 
                     let out = region.assign_advice(
                         || "out",
                         self.config.c,
                         0,
-                        || Ok(values.ok_or(Error::Synthesis)?.2),
+                        || values.unwrap().map(|v| v.2),
                     )?;
 
-                    region.assign_fixed(|| "a", self.config.sa, 0, || Ok(FF::zero()))?;
-                    region.assign_fixed(|| "b", self.config.sb, 0, || Ok(FF::zero()))?;
-                    region.assign_fixed(|| "c", self.config.sc, 0, || Ok(FF::one()))?;
-                    region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(FF::one()))?;
+                    region.assign_fixed(|| "a", self.config.sa, 0, || Value::known(FF::zero()))?;
+                    region.assign_fixed(|| "b", self.config.sb, 0, || Value::known(FF::zero()))?;
+                    region.assign_fixed(|| "c", self.config.sc, 0, || Value::known(FF::one()))?;
+                    region.assign_fixed(
+                        || "a * b",
+                        self.config.sm,
+                        0,
+                        || Value::known(FF::one()),
+                    )?;
 
                     Ok((lhs.cell(), rhs.cell(), out.cell()))
                 },
@@ -118,7 +131,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             mut f: F,
         ) -> Result<(Cell, Cell, Cell), Error>
         where
-            F: FnMut() -> Result<(FF, FF, FF), Error>,
+            F: FnMut() -> Value<(Assigned<FF>, Assigned<FF>, Assigned<FF>)>,
         {
             layouter.assign_region(
                 || "mul",
@@ -129,28 +142,33 @@ fn criterion_benchmark(c: &mut Criterion) {
                         self.config.a,
                         0,
                         || {
-                            values = Some(f()?);
-                            Ok(values.ok_or(Error::Synthesis)?.0)
+                            values = Some(f());
+                            values.unwrap().map(|v| v.0)
                         },
                     )?;
                     let rhs = region.assign_advice(
                         || "rhs",
                         self.config.b,
                         0,
-                        || Ok(values.ok_or(Error::Synthesis)?.1),
+                        || values.unwrap().map(|v| v.1),
                     )?;
 
                     let out = region.assign_advice(
                         || "out",
                         self.config.c,
                         0,
-                        || Ok(values.ok_or(Error::Synthesis)?.2),
+                        || values.unwrap().map(|v| v.2),
                     )?;
 
-                    region.assign_fixed(|| "a", self.config.sa, 0, || Ok(FF::one()))?;
-                    region.assign_fixed(|| "b", self.config.sb, 0, || Ok(FF::one()))?;
-                    region.assign_fixed(|| "c", self.config.sc, 0, || Ok(FF::one()))?;
-                    region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(FF::zero()))?;
+                    region.assign_fixed(|| "a", self.config.sa, 0, || Value::known(FF::one()))?;
+                    region.assign_fixed(|| "b", self.config.sb, 0, || Value::known(FF::one()))?;
+                    region.assign_fixed(|| "c", self.config.sc, 0, || Value::known(FF::one()))?;
+                    region.assign_fixed(
+                        || "a * b",
+                        self.config.sm,
+                        0,
+                        || Value::known(FF::zero()),
+                    )?;
 
                     Ok((lhs.cell(), rhs.cell(), out.cell()))
                 },
@@ -178,7 +196,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
-            Self { a: None, k: self.k }
+            Self {
+                a: Value::unknown(),
+                k: self.k,
+            }
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> PlonkConfig {
@@ -228,40 +249,29 @@ fn criterion_benchmark(c: &mut Criterion) {
             let cs = StandardPlonk::new(config);
 
             for _ in 0..(((1 << self.k) / 3) - 2) {
-                let inv = match self.a {
-                    Some(p) => {
-                        if p == F::zero() {
-                            Some(F::zero())
-                        } else {
-                            Some(-self.a.clone().unwrap().invert().unwrap())
-                        }
-                    }
-                    None => Some(F::zero()),
-                };
+                let a: Value<Assigned<_>> = self.a.into();
+                // such that a * inv_neg = -1
+                let inv_neg: Value<Assigned<_>> = a.clone().invert().neg();
+                let one = Assigned::from(F::one());
+                let zero = Assigned::Zero;
+
                 // first gate, the mul gate
                 let (_a1, b1, c1) = cs.raw_multiply(&mut layouter, || {
-                    Ok((
-                        inv.clone().unwrap(),
-                        self.a.ok_or(Error::Synthesis)?,
-                        inv.clone().unwrap() * self.a.unwrap(),
-                    ))
+                    a.zip(inv_neg).map(|(a, inv_neg)| (inv_neg, a, inv_neg * a))
                 })?;
+
                 // addition gate, where we are going to create out
                 let (a2, _b2, c2) = cs.raw_add(&mut layouter, || {
-                    Ok((
-                        inv.clone().unwrap() * self.a.unwrap(),
-                        F::one(),
-                        inv.clone().unwrap() * self.a.unwrap() + F::one(),
-                    ))
+                    a.zip(inv_neg)
+                        .map(|(a, inv_neg)| (inv_neg * a, one, one + (inv_neg * a)))
                 })?;
+
                 // final gate, the second multiplication gate
                 let (a3, b3, _c3) = cs.raw_multiply(&mut layouter, || {
-                    Ok((
-                        inv.clone().unwrap() * self.a.unwrap() + F::one(),
-                        self.a.ok_or(Error::Synthesis)?,
-                        F::zero(),
-                    ))
+                    a.zip(inv_neg)
+                        .map(|(a, inv_neg)| (one + (inv_neg * a), a, zero))
                 })?;
+
                 // copy constraints
                 cs.copy(&mut layouter, c1, a2).unwrap();
                 cs.copy(&mut layouter, c2, a3).unwrap();
@@ -273,8 +283,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     // Initialise parameters for the circuit
-    let public_inputs_size = 0;
-    let a_value = Some(Fp::from(100000));
+    let a_value = Value::known(Fp::from(2));
 
     // Initialise the benching parameter
     let k_range = 10..=10;
@@ -283,15 +292,18 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut verifier_key_generation = c.benchmark_group("Verifier Key Generation");
     verifier_key_generation.sample_size(10);
     for k in k_range.clone() {
-        let empty_circuit: MyCircuit<Fp> = MyCircuit { a: None, k };
-        let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(k);
+        let empty_circuit: MyCircuit<Fp> = MyCircuit {
+            a: Value::unknown(),
+            k,
+        };
+        let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
 
         verifier_key_generation.bench_with_input(
             BenchmarkId::from_parameter(k),
             &(&params, &empty_circuit),
             |b, &(params, empty_circuit)| {
                 b.iter(|| {
-                    keygen_vk(&params, empty_circuit).expect("keygen_vk should not fail");
+                    keygen_vk(params, empty_circuit).expect("keygen_vk should not fail");
                 });
             },
         );
@@ -302,16 +314,19 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut prover_key_generation = c.benchmark_group("Prover Key Generation");
     prover_key_generation.sample_size(10);
     for k in k_range.clone() {
-        let empty_circuit: MyCircuit<Fp> = MyCircuit { a: None, k };
-        let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(k);
+        let empty_circuit: MyCircuit<Fp> = MyCircuit {
+            a: Value::unknown(),
+            k,
+        };
+        let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
 
         prover_key_generation.bench_with_input(
             BenchmarkId::from_parameter(k),
             &(&params, &empty_circuit),
             |b, &(params, empty_circuit)| {
                 b.iter(|| {
-                    let vk = keygen_vk(&params, empty_circuit).expect("keygen_vk should not fail");
-                    keygen_pk(&params, vk, empty_circuit).expect("keygen_pk should not fail");
+                    let vk = keygen_vk(params, empty_circuit).expect("keygen_vk should not fail");
+                    keygen_pk(params, vk, empty_circuit).expect("keygen_pk should not fail");
                 });
             },
         );
@@ -322,19 +337,23 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut proof_generation = c.benchmark_group("Proof Generation");
     proof_generation.sample_size(10);
     for k in k_range.clone() {
-        let empty_circuit: MyCircuit<Fp> = MyCircuit { a: None, k };
-        let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(k);
+        let empty_circuit: MyCircuit<Fp> = MyCircuit {
+            a: Value::unknown(),
+            k,
+        };
+        let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
         let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
         let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
         let circuit: MyCircuit<Fp> = MyCircuit { a: a_value, k };
-        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        let mut transcript: Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>> =
+            Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
         proof_generation.bench_with_input(
             BenchmarkId::from_parameter(k),
             &(&params, &pk),
             |b, &(params, pk)| {
                 b.iter(|| {
-                    create_proof(
+                    create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<Bn256>, _, _, _, _>(
                         &params,
                         &pk,
                         &[circuit.clone()],
@@ -353,24 +372,35 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut proof_verification = c.benchmark_group("Proof Verification");
     proof_verification.sample_size(10);
     for k in k_range.clone() {
-        let empty_circuit: MyCircuit<Fp> = MyCircuit { a: None, k };
-        let params: Params<G1Affine> = Params::<G1Affine>::unsafe_setup::<Bn256>(k);
-        let params_verifier: ParamsVerifier<Bn256> = params.verifier(public_inputs_size).unwrap();
+        let empty_circuit: MyCircuit<Fp> = MyCircuit {
+            a: Value::unknown(),
+            k,
+        };
+        let params: ParamsKZG<Bn256> = ParamsKZG::new(k);
+        let strategy = SingleStrategy::new(&params);
         let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
         let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
         let circuit: MyCircuit<Fp> = MyCircuit { a: a_value, k };
-        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-        create_proof(&params, &pk, &[circuit], &[&[]], OsRng, &mut transcript)
-            .expect("proof generation should not fail");
+        let mut transcript: Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>> =
+            Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<Bn256>, _, _, _, _>(
+            &params,
+            &pk,
+            &[circuit],
+            &[&[]],
+            OsRng,
+            &mut transcript,
+        )
+        .expect("proof generation should not fail");
         let proof = transcript.finalize();
         let transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
         proof_verification.bench_with_input(BenchmarkId::from_parameter(k), &(), |b, ()| {
             b.iter(|| {
-                verify_proof(
-                    &params_verifier,
+                verify_proof::<_, VerifierGWC<Bn256>, _, _, _>(
+                    &params,
                     pk.get_vk(),
-                    SingleVerifier::new(&params_verifier),
+                    strategy.clone(),
                     &[&[]],
                     &mut transcript.clone(),
                 )

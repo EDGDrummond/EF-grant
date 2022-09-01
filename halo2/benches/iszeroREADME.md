@@ -10,6 +10,11 @@ These 2 constriants are defined by 3 gates. The second constraint is one gate an
 a. `in * inv_neg = int`
 b. `1 + int = out`
 
+
+Run the command:
+
+`cargo criterion --bench iszero`
+
 IsZero() at 2^14 constraints:
 Verifier Key Generation:   [168.32 ms 168.94 ms 169.75 ms]
 Prover Key Generation:     [302.82 ms 306.60 ms 312.28 ms]

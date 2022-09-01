@@ -321,6 +321,7 @@ version = "0.1.0"
 dependencies = [
  "assert_matches",
  "criterion",
+ "ff 0.12.0",
  "group 0.12.0",
  "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2.git)",
  "halo2wrong",
@@ -381,7 +382,7 @@ dependencies = [
 [[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2wrong#56639b615295e08e0ef145d8a0c3876f606a7c5c"
+source = "git+https://github.com/privacy-scaling-explorations/halo2wrong.git#56639b615295e08e0ef145d8a0c3876f606a7c5c"
 dependencies = [
  "group 0.12.0",
  "halo2_proofs 0.2.0 (git+https://github.com/privacy-scaling-explorations/halo2?tag=v2022_08_19)",

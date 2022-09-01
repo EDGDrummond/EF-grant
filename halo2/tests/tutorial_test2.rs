@@ -14,15 +14,9 @@ use halo2_proofs::{
 #[allow(non_snake_case)]
 #[derive(Debug, Clone)]
 struct TutorialConfig {
-    l: Column<Advice>,
-    r: Column<Advice>,
-    o: Column<Advice>,
-
-    sl: Column<Fixed>,
-    sr: Column<Fixed>,
-    so: Column<Fixed>,
-    sm: Column<Fixed>,
-    PI: Column<Instance>,
+    advice: [Column<Advice>; 3],
+    fixed: [Column<Fixed>; 4],
+    instance: [Column<Instance>; 1],
 }
 
 struct TutorialChip<F: FieldExt> {
@@ -95,7 +89,7 @@ impl<F: FieldExt> TutorialComposer<F> for TutorialChip<F> {
                 let mut values = None;
                 let lhs = region.assign_advice(
                     || "lhs",
-                    self.config.l,
+                    self.config.advice[0],
                     0,
                     || {
                         values = Some(f());
@@ -104,20 +98,20 @@ impl<F: FieldExt> TutorialComposer<F> for TutorialChip<F> {
                 )?;
                 let rhs = region.assign_advice(
                     || "rhs",
-                    self.config.r,
+                    self.config.advice[1],
                     0,
                     || values.unwrap().map(|v| v.1),
                 )?;
 
                 let out = region.assign_advice(
                     || "out",
-                    self.config.o,
+                    self.config.advice[2],
                     0,
                     || values.unwrap().map(|v| v.2),
                 )?;
 
-                region.assign_fixed(|| "m", self.config.sm, 0, || Value::known(F::one()))?;
-                region.assign_fixed(|| "o", self.config.so, 0, || Value::known(F::one()))?;
+                region.assign_fixed(|| "m", self.config.fixed[3], 0, || Value::known(F::one()))?;
+                region.assign_fixed(|| "o", self.config.fixed[2], 0, || Value::known(F::one()))?;
 
                 Ok((lhs.cell(), rhs.cell(), out.cell()))
             },
@@ -138,7 +132,7 @@ impl<F: FieldExt> TutorialComposer<F> for TutorialChip<F> {
                 let mut values = None;
                 let lhs = region.assign_advice(
                     || "lhs",
-                    self.config.l,
+                    self.config.advice[0],
                     0,
                     || {
                         values = Some(f());
@@ -147,21 +141,21 @@ impl<F: FieldExt> TutorialComposer<F> for TutorialChip<F> {
                 )?;
                 let rhs = region.assign_advice(
                     || "rhs",
-                    self.config.r,
+                    self.config.advice[1],
                     0,
                     || values.unwrap().map(|v| v.1),
                 )?;
 
                 let out = region.assign_advice(
                     || "out",
-                    self.config.o,
+                    self.config.advice[2],
                     0,
                     || values.unwrap().map(|v| v.2),
                 )?;
 
-                region.assign_fixed(|| "l", self.config.sl, 0, || Value::known(F::one()))?;
-                region.assign_fixed(|| "r", self.config.sr, 0, || Value::known(F::one()))?;
-                region.assign_fixed(|| "o", self.config.so, 0, || Value::known(F::one()))?;
+                region.assign_fixed(|| "l", self.config.fixed[0], 0, || Value::known(F::one()))?;
+                region.assign_fixed(|| "r", self.config.fixed[1], 0, || Value::known(F::one()))?;
+                region.assign_fixed(|| "o", self.config.fixed[2], 0, || Value::known(F::one()))?;
 
                 Ok((lhs.cell(), rhs.cell(), out.cell()))
             },
@@ -184,7 +178,7 @@ impl<F: FieldExt> TutorialComposer<F> for TutorialChip<F> {
         cell: Cell,
         row: usize,
     ) -> Result<(), Error> {
-        layouter.constrain_instance(cell, self.config.PI, row)
+        layouter.constrain_instance(cell, self.config.instance[0], row)
     }
 }
 
@@ -234,14 +228,9 @@ impl<F: FieldExt> Circuit<F> for TutorialCircuit<F> {
         });
 
         TutorialConfig {
-            l,
-            r,
-            o,
-            sl,
-            sr,
-            so,
-            sm,
-            PI,
+            advice: [l, r, o],
+            fixed: [sl, sr, so, sm],
+            instance: [PI],
         }
     }
 
@@ -281,10 +270,10 @@ impl<F: FieldExt> Circuit<F> for TutorialCircuit<F> {
         cs.copy(&mut layouter, c2, a3)?;
 
         // Ensure that the constant in the TutorialCircuit struct is correctly used and that the
-        // result of the circuit computation is what is expected.   
+        // result of the circuit computation is what is expected.
         cs.expose_public(&mut layouter, b3, 0)?;
         // layouter.constrain_instance(b3, cs.config.PI, 0)?;
-        layouter.constrain_instance(c3, cs.config.PI, 1)?;
+        layouter.constrain_instance(c3, cs.config.instance[0], 1)?;
 
         Ok(())
     }

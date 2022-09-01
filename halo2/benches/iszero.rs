@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate criterion;
+use criterion::{BenchmarkId, Criterion};
 
 use halo2_proofs::halo2curves::bn256::{Bn256, Fr as Fp, G1Affine};
 use halo2_proofs::poly::commitment::ParamsProver;
@@ -20,8 +21,6 @@ use rand_core::OsRng;
 
 use std::marker::PhantomData;
 use std::ops::Neg;
-
-use criterion::{BenchmarkId, Criterion};
 
 fn criterion_benchmark(c: &mut Criterion) {
     #[derive(Clone)]
@@ -319,14 +318,15 @@ fn criterion_benchmark(c: &mut Criterion) {
             k,
         };
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
+        let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
 
         prover_key_generation.bench_with_input(
             BenchmarkId::from_parameter(k),
-            &(&params, &empty_circuit),
-            |b, &(params, empty_circuit)| {
+            &(&params, &empty_circuit, &vk),
+            |b, &(params, empty_circuit, vk)| {
                 b.iter(|| {
-                    let vk = keygen_vk(params, empty_circuit).expect("keygen_vk should not fail");
-                    keygen_pk(params, vk, empty_circuit).expect("keygen_pk should not fail");
+                    keygen_pk(params, vk.clone(), empty_circuit)
+                        .expect("keygen_pk should not fail");
                 });
             },
         );

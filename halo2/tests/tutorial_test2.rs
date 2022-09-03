@@ -1,15 +1,11 @@
-use std::marker::PhantomData;
-
-// halo2wrong = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git" }
-
 use halo2_proofs::circuit::Value;
-use halo2_proofs::plonk::Assigned;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Cell, Chip, Layouter, SimpleFloorPlanner},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance},
+    plonk::{Advice, Assigned, Circuit, Column, ConstraintSystem, Error, Fixed, Instance},
     poly::Rotation,
 };
+use std::marker::PhantomData;
 
 #[allow(non_snake_case)]
 #[derive(Debug, Clone)]

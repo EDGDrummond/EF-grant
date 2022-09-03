@@ -468,7 +468,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let circuit = TestCircuit::<Fp> {
         inputs: inputs.clone(),
     };
-    let params: ParamsKZG<Bn256> = ParamsKZG::new(k);
+    let params: ParamsKZG<Bn256> = ParamsKZG::new(12);
     let strategy = SingleStrategy::new(&params);
     let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
     let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");

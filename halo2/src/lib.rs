@@ -14,12 +14,10 @@ use halo2wrong::halo2::circuit::AssignedCell;
 mod main_gate;
 mod instructions;
 mod range;
-mod range2;
 
 pub use instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 pub use main_gate::*;
 pub use range::*;
-pub use range2::*;
 
 #[cfg(test)]
 use halo2wrong::curves;

@@ -8,7 +8,6 @@ use halo2wrong::halo2::arithmetic::FieldExt;
 use halo2wrong::halo2::circuit::Chip;
 use halo2wrong::halo2::circuit::Value;
 use halo2wrong::halo2::circuit::{Layouter, SimpleFloorPlanner};
-use halo2wrong::halo2::dev::MockProver;
 use halo2wrong::halo2::halo2curves::bn256::{Bn256, Fr as Fp, G1Affine};
 use halo2wrong::halo2::plonk::*;
 use halo2wrong::halo2::poly::commitment::ParamsProver;
@@ -344,6 +343,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     #[derive(Default, Clone, Debug)]
     struct TestCircuit<F: FieldExt> {
         inputs: Vec<Input<F>>,
+        range_repeats: u32,
     }
 
     impl<F: FieldExt> TestCircuit<F> {
@@ -361,7 +361,18 @@ fn criterion_benchmark(c: &mut Criterion) {
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
-            Self::default()
+            let mut inputs = vec![];
+            for i in 0..self.inputs.len() {
+                inputs.push(Input {
+                    bit_len: self.inputs[i].bit_len,
+                    limb_bit_len: self.inputs[i].limb_bit_len,
+                    value: Value::unknown(),
+                })
+            }
+            TestCircuit {
+                inputs,
+                range_repeats: self.range_repeats,
+            }
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
@@ -380,35 +391,37 @@ fn criterion_benchmark(c: &mut Criterion) {
             let range_chip = config.range_chip();
             let main_gate = config.main_gate();
 
-            layouter.assign_region(
-                || "region 0",
-                |region| {
-                    let offset = 0;
-                    let ctx = &mut RegionCtx::new(region, offset);
+            for _ in 0..self.range_repeats {
+                layouter.assign_region(
+                    || "region 0",
+                    |region| {
+                        let offset = 0;
+                        let ctx = &mut RegionCtx::new(region, offset);
 
-                    for input in self.inputs.iter() {
-                        let value = input.value;
-                        let limb_bit_len = input.limb_bit_len;
-                        let bit_len = input.bit_len;
+                        for input in self.inputs.iter() {
+                            let value = input.value;
+                            let limb_bit_len = input.limb_bit_len;
+                            let bit_len = input.bit_len;
 
-                        let a_0 = main_gate.assign_value(ctx, value)?;
-                        let (a_1, decomposed) =
-                            range_chip.decompose(ctx, value, limb_bit_len, bit_len)?;
+                            let a_0 = main_gate.assign_value(ctx, value)?;
+                            let (a_1, decomposed) =
+                                range_chip.decompose(ctx, value, limb_bit_len, bit_len)?;
 
-                        main_gate.assert_equal(ctx, &a_0, &a_1)?;
+                            main_gate.assert_equal(ctx, &a_0, &a_1)?;
 
-                        let terms: Vec<Term<F>> = decomposed
-                            .iter()
-                            .zip(range_chip.bases(limb_bit_len))
-                            .map(|(limb, base)| Term::Assigned(limb, *base))
-                            .collect();
-                        let a_1 = main_gate.compose(ctx, &terms[..], F::zero())?;
-                        main_gate.assert_equal(ctx, &a_0, &a_1)?;
-                    }
+                            let terms: Vec<Term<F>> = decomposed
+                                .iter()
+                                .zip(range_chip.bases(limb_bit_len))
+                                .map(|(limb, base)| Term::Assigned(limb, *base))
+                                .collect();
+                            let a_1 = main_gate.compose(ctx, &terms[..], F::zero())?;
+                            main_gate.assert_equal(ctx, &a_0, &a_1)?;
+                        }
 
-                    Ok(())
-                },
-            )?;
+                        Ok(())
+                    },
+                )?;
+            }
 
             range_chip.load_composition_tables(&mut layouter)?;
             range_chip.load_overflow_tables(&mut layouter)?;
@@ -419,9 +432,10 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     const LIMB_BIT_LEN: usize = 8;
     const OVERFLOW_BIT_LEN: usize = 3;
-    let k: u32 = (LIMB_BIT_LEN + 1) as u32;
-    // Initialise the benching parameter
+    // Initialise the benching parameter, note that minimum k per iteration of range gadget is LIMB_BIT_LEN+1
+    // Refer to readme for more detail
     let k_range = 12..=12;
+    let range_repeats = 2_u32.pow(3);
 
     let inputs: Vec<Input<Fp>> = (2..15)
         .map(|number_of_limbs| {
@@ -433,68 +447,13 @@ fn criterion_benchmark(c: &mut Criterion) {
             }
         })
         .collect();
-    let empty_inputs: Vec<Input<Fp>> = (2..15)
-        .map(|number_of_limbs| {
-            let bit_len = LIMB_BIT_LEN * number_of_limbs + OVERFLOW_BIT_LEN;
-            Input {
-                value: Value::unknown(),
-                limb_bit_len: LIMB_BIT_LEN,
-                bit_len,
-            }
-        })
-        .collect();
 
+    // Initialise circuit, and an empty version of it
     let circuit = TestCircuit::<Fp> {
         inputs: inputs.clone(),
+        range_repeats: range_repeats,
     };
-
-    // Prover used to test the gadget from the original code
-    //
-    let public_inputs = vec![vec![]];
-    let prover = match MockProver::run(k, &circuit, public_inputs) {
-        Ok(prover) => prover,
-        Err(e) => panic!("{:#?}", e),
-    };
-    assert_eq!(prover.verify(), Ok(()));
-    println!("milestone1");
-    //
-    //
-
-    // Get it working in completion first
-    //
-    let empty_circuit: TestCircuit<Fp> = TestCircuit {
-        inputs: empty_inputs.clone(),
-    };
-    let circuit = TestCircuit::<Fp> {
-        inputs: inputs.clone(),
-    };
-    let params: ParamsKZG<Bn256> = ParamsKZG::new(12);
-    let strategy = SingleStrategy::new(&params);
-    let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
-    let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
-    let mut transcript: Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>> =
-        Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-    create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<Bn256>, _, _, _, _>(
-        &params,
-        &pk,
-        &[circuit.clone()],
-        &[&[]],
-        OsRng,
-        &mut transcript,
-    )
-    .expect("proof generation should not fail");
-    let proof = transcript.finalize();
-    let transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-    verify_proof::<_, VerifierGWC<Bn256>, _, _, _>(
-        &params,
-        pk.get_vk(),
-        strategy.clone(),
-        &[&[]],
-        &mut transcript.clone(),
-    )
-    .unwrap();
-    //
-    //
+    let empty_circuit = circuit.clone().without_witnesses();
 
     // Prepare benching for verifier key generation
     let mut verifier_key_generation = c.benchmark_group("Verifier Key Generation");
@@ -504,10 +463,10 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         verifier_key_generation.bench_with_input(
             BenchmarkId::from_parameter(k),
-            &(&params, &circuit),
-            |b, &(params, circuit)| {
+            &(&params, &empty_circuit),
+            |b, &(params, empty_circuit)| {
                 b.iter(|| {
-                    keygen_vk(params, circuit).expect("keygen_vk should not fail");
+                    keygen_vk(params, empty_circuit).expect("keygen_vk should not fail");
                 });
             },
         );
@@ -519,14 +478,15 @@ fn criterion_benchmark(c: &mut Criterion) {
     prover_key_generation.sample_size(10);
     for k in k_range.clone() {
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
-        let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
+        let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
 
         prover_key_generation.bench_with_input(
             BenchmarkId::from_parameter(k),
-            &(&params, &circuit, &vk),
-            |b, &(params, circuit, vk)| {
+            &(&params, &empty_circuit, &vk),
+            |b, &(params, empty_circuit, vk)| {
                 b.iter(|| {
-                    keygen_pk(params, vk.clone(), circuit).expect("keygen_pk should not fail");
+                    keygen_pk(params, vk.clone(), empty_circuit)
+                        .expect("keygen_pk should not fail");
                 });
             },
         );
@@ -539,10 +499,11 @@ fn criterion_benchmark(c: &mut Criterion) {
     for k in k_range.clone() {
         let circuit = TestCircuit::<Fp> {
             inputs: inputs.clone(),
+            range_repeats: range_repeats,
         };
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
-        let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
-        let pk = keygen_pk(&params, vk, &circuit).expect("keygen_pk should not fail");
+        let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
+        let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
         let mut transcript: Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>> =
             Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 
@@ -555,7 +516,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         &params,
                         &pk,
                         &[circuit.clone()],
-                        &[&[]],
+                        &[&[&[]]],
                         OsRng,
                         &mut transcript,
                     )
@@ -572,6 +533,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     for k in k_range.clone() {
         let circuit = TestCircuit::<Fp> {
             inputs: inputs.clone(),
+            range_repeats: range_repeats,
         };
         let params: ParamsKZG<Bn256> = ParamsKZG::new(k);
         let strategy = SingleStrategy::new(&params);
@@ -583,7 +545,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             &params,
             &pk,
             &[circuit],
-            &[&[]],
+            &[&[&[]]],
             OsRng,
             &mut transcript,
         )
@@ -597,7 +559,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     &params,
                     pk.get_vk(),
                     strategy.clone(),
-                    &[&[]],
+                    &[&[&[]]],
                     &mut transcript.clone(),
                 )
                 .unwrap();
@@ -605,14 +567,6 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     }
     proof_verification.finish();
-
-    let circuit = TestCircuit::<Fp> { inputs };
-    let public_inputs = vec![vec![]];
-    let prover = match MockProver::run(k, &circuit, public_inputs) {
-        Ok(prover) => prover,
-        Err(e) => panic!("{:#?}", e),
-    };
-    assert_eq!(prover.verify(), Ok(()));
 }
 
 criterion_group!(benches, criterion_benchmark);

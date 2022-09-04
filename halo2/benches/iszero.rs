@@ -337,14 +337,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut proof_generation = c.benchmark_group("Proof Generation");
     proof_generation.sample_size(10);
     for k in k_range.clone() {
-        let empty_circuit: MyCircuit<Fp> = MyCircuit {
-            a: Value::unknown(),
-            k,
-        };
-        let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
-        let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
-        let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
         let circuit: MyCircuit<Fp> = MyCircuit { a: a_value, k };
+        let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
+        let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
+        let pk = keygen_pk(&params, vk, &circuit).expect("keygen_pk should not fail");
         let mut transcript: Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>> =
             Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
 

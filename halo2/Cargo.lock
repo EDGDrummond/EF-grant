@@ -522,7 +522,7 @@ checksum = "0ab1bc2a289d34bd04a330323ac98a1b4bc82c9d9fcb1e66b63caa84da26b575"
 [[package]]
 name = "pairing_bn256"
 version = "0.1.1"
-source = "git+https://github.com/appliedzkp/pairing?tag=v0.1.1#1da2920e0e0b3de5929111e9d6193b6b4f0d99e3"
+source = "git+https://github.com/appliedzkp/pairing.git?tag=v0.1.1#1da2920e0e0b3de5929111e9d6193b6b4f0d99e3"
 dependencies = [
  "ff 0.11.1",
  "group 0.11.0",

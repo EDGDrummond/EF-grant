@@ -294,7 +294,7 @@ impl<F: FieldExt> Circuit<F> for TutorialCircuit<F> {
 }
 
 #[test]
-fn main() {
+fn tutorial_test() {
     use halo2_proofs::dev::MockProver;
     use halo2_proofs::halo2curves::bn256::Fr as Fp;
 
@@ -322,7 +322,7 @@ fn main() {
 
     // TODO: This broke when Value was introduced to replace Option. Fix it
     // If we try some other public input, the proof will fail!
-    public_inputs[1] += Fp::one();
+    public_inputs[0] += Fp::one();
     // let prover = MockProver::run(k, &circuit, vec![public_inputs]).unwrap();
     // assert!(prover.verify().is_err());
 }

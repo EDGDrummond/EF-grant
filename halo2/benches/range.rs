@@ -3,7 +3,6 @@ extern crate criterion;
 use criterion::{BenchmarkId, Criterion};
 
 use halo2::{AssignedValue, MainGate, MainGateConfig, MainGateInstructions, Term};
-// use halo2wrong::curves::pasta::Fp;
 use halo2wrong::halo2::arithmetic::FieldExt;
 use halo2wrong::halo2::circuit::Chip;
 use halo2wrong::halo2::circuit::Value;
@@ -456,7 +455,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let empty_circuit = circuit.clone().without_witnesses();
 
     // Prepare benching for verifier key generation
-    let mut verifier_key_generation = c.benchmark_group("Verifier Key Generation");
+    let mut verifier_key_generation = c.benchmark_group("Range Verifier Key Generation");
     verifier_key_generation.sample_size(10);
     for k in k_range.clone() {
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
@@ -474,7 +473,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     verifier_key_generation.finish();
 
     // Prepare benching for prover key generation
-    let mut prover_key_generation = c.benchmark_group("Prover Key Generation");
+    let mut prover_key_generation = c.benchmark_group("Range Prover Key Generation");
     prover_key_generation.sample_size(10);
     for k in k_range.clone() {
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
@@ -494,7 +493,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     prover_key_generation.finish();
 
     // Prepare benching for proof generation
-    let mut proof_generation = c.benchmark_group("Proof Generation");
+    let mut proof_generation = c.benchmark_group("Range Proof Generation");
     proof_generation.sample_size(10);
     for k in k_range.clone() {
         let circuit = TestCircuit::<Fp> {
@@ -528,7 +527,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     proof_generation.finish();
 
     // Prepare benching for proof verification
-    let mut proof_verification = c.benchmark_group("Proof Verification");
+    let mut proof_verification = c.benchmark_group("Range Proof Verification");
     proof_verification.sample_size(10);
     for k in k_range.clone() {
         let circuit = TestCircuit::<Fp> {

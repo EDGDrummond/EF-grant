@@ -288,7 +288,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let k_range = 10..=10;
 
     // Prepare benching for verifier key generation
-    let mut verifier_key_generation = c.benchmark_group("Verifier Key Generation");
+    let mut verifier_key_generation = c.benchmark_group("IsZero Verifier Key Generation");
     verifier_key_generation.sample_size(10);
     for k in k_range.clone() {
         let empty_circuit: MyCircuit<Fp> = MyCircuit {
@@ -310,7 +310,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     verifier_key_generation.finish();
 
     // Prepare benching for prover key generation
-    let mut prover_key_generation = c.benchmark_group("Prover Key Generation");
+    let mut prover_key_generation = c.benchmark_group("IsZero Prover Key Generation");
     prover_key_generation.sample_size(10);
     for k in k_range.clone() {
         let empty_circuit: MyCircuit<Fp> = MyCircuit {
@@ -334,7 +334,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     prover_key_generation.finish();
 
     // Prepare benching for proof generation
-    let mut proof_generation = c.benchmark_group("Proof Generation");
+    let mut proof_generation = c.benchmark_group("IsZero Proof Generation");
     proof_generation.sample_size(10);
     for k in k_range.clone() {
         let circuit: MyCircuit<Fp> = MyCircuit { a: a_value, k };
@@ -365,7 +365,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     proof_generation.finish();
 
     // Prepare benching for proof verification
-    let mut proof_verification = c.benchmark_group("Proof Verification");
+    let mut proof_verification = c.benchmark_group("IsZero Proof Verification");
     proof_verification.sample_size(10);
     for k in k_range.clone() {
         let empty_circuit: MyCircuit<Fp> = MyCircuit {

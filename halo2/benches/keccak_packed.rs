@@ -19,10 +19,10 @@ use halo2wrong::halo2::{
 };
 use rand_core::OsRng;
 
-use zkevm_circuits::keccak_circuit::keccak_bit::KeccakBitCircuit;
+use zkevm_circuits::keccak_circuit::keccak_packed::KeccakPackedCircuit;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let k = 8;
+    let k = 9;
     let inputs = vec![
         vec![],
         (0u8..1).collect::<Vec<_>>(),
@@ -31,11 +31,11 @@ fn criterion_benchmark(c: &mut Criterion) {
         (0u8..200).collect::<Vec<_>>(),
     ];
 
-    let mut circuit = KeccakBitCircuit::new(2usize.pow(k));
+    let mut circuit = KeccakPackedCircuit::new(2usize.pow(k));
     circuit.generate_witness(&inputs);
 
     // Prepare benching for verifier key generation
-    let mut verifier_key_generation = c.benchmark_group("ECDSA Verifier Key Generation");
+    let mut verifier_key_generation = c.benchmark_group("Keccak packed Verifier Key Generation");
     verifier_key_generation.sample_size(10);
     {
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
@@ -53,7 +53,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     verifier_key_generation.finish();
 
     // Prepare benching for prover key generation
-    let mut prover_key_generation = c.benchmark_group("ECDSA Prover Key Generation");
+    let mut prover_key_generation = c.benchmark_group("Keccak packed Prover Key Generation");
     prover_key_generation.sample_size(10);
     {
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
@@ -72,10 +72,10 @@ fn criterion_benchmark(c: &mut Criterion) {
     prover_key_generation.finish();
 
     // Prepare benching for proof generation
-    let mut proof_generation = c.benchmark_group("ECDSA Proof Generation");
+    let mut proof_generation = c.benchmark_group("Keccak packed Proof Generation");
     proof_generation.sample_size(10);
     {
-        let mut circuit = KeccakBitCircuit::new(2usize.pow(k));
+        let mut circuit = KeccakPackedCircuit::new(2usize.pow(k));
         circuit.generate_witness(&inputs);
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
         let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
@@ -88,7 +88,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             &(&params, &pk),
             |b, &(params, pk)| {
                 b.iter(|| {
-                    let mut circuit = KeccakBitCircuit::new(2usize.pow(k));
+                    let mut circuit = KeccakPackedCircuit::new(2usize.pow(k));
                     circuit.generate_witness(&inputs);
                     create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<Bn256>, _, _, _, _>(
                         &params,
@@ -106,7 +106,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     proof_generation.finish();
 
     // Prepare benching for proof verification
-    let mut proof_verification = c.benchmark_group("ECDSA Proof Verification");
+    let mut proof_verification = c.benchmark_group("Keccak packed Proof Verification");
     proof_verification.sample_size(10);
     {
         let params: ParamsKZG<Bn256> = ParamsKZG::new(k);

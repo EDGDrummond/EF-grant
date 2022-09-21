@@ -40,5 +40,9 @@ name = "ecdsa"
 harness = false
 
 [[bench]]
-name = "keccak"
+name = "keccak_bit"
+harness = false
+
+[[bench]]
+name = "keccak_packed"
 harness = false

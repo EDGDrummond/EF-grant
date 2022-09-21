@@ -26,3 +26,5 @@ Verifier Key Generation:   [1.8569 s 1.8852 s 1.9184 s]
 Prover Key Generation:     [3.8963 s 3.9675 s 4.0449 s]
 Proof Generation:          [8.4708 s 8.5382 s 8.6053 s] 
 Proof Verification:        [2.6158 ms 2.6222 ms 2.6264 ms]  
+
+Note: these bench figures were recorded on a 2020 M1 MacBook Air with 16GB RAM

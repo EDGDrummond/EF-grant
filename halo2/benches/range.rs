@@ -3,24 +3,26 @@ extern crate criterion;
 use criterion::{BenchmarkId, Criterion};
 
 use halo2::{AssignedValue, MainGate, MainGateConfig, MainGateInstructions, Term};
-use halo2wrong::halo2::arithmetic::FieldExt;
-use halo2wrong::halo2::circuit::Chip;
-use halo2wrong::halo2::circuit::Value;
-use halo2wrong::halo2::circuit::{Layouter, SimpleFloorPlanner};
-use halo2wrong::halo2::halo2curves::bn256::{Bn256, Fr as Fp, G1Affine};
-use halo2wrong::halo2::plonk::*;
-use halo2wrong::halo2::poly::commitment::ParamsProver;
-use halo2wrong::halo2::poly::kzg::commitment::KZGCommitmentScheme;
-use halo2wrong::halo2::poly::kzg::commitment::ParamsKZG;
-use halo2wrong::halo2::poly::kzg::multiopen::ProverGWC;
-use halo2wrong::halo2::poly::kzg::multiopen::VerifierGWC;
-use halo2wrong::halo2::poly::kzg::strategy::SingleStrategy;
-use halo2wrong::halo2::poly::Rotation;
-use halo2wrong::halo2::transcript::{
-    Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+use halo2wrong::{
+    halo2::{
+        arithmetic::FieldExt,
+        circuit::{Chip, Layouter, SimpleFloorPlanner, Value},
+        halo2curves::bn256::{Bn256, Fr as Fp, G1Affine},
+        plonk::*,
+        poly::{
+            commitment::ParamsProver,
+            kzg::commitment::{KZGCommitmentScheme, ParamsKZG},
+            kzg::multiopen::{ProverGWC, VerifierGWC},
+            kzg::strategy::SingleStrategy,
+            Rotation,
+        },
+        transcript::{
+            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+        },
+    },
+    utils::decompose,
+    RegionCtx,
 };
-use halo2wrong::utils::decompose;
-use halo2wrong::RegionCtx;
 use num_integer::Integer;
 use rand_core::OsRng;
 use std::collections::BTreeMap;
@@ -433,7 +435,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     const OVERFLOW_BIT_LEN: usize = 3;
     // Initialise the benching parameter, note that minimum k per iteration of range gadget is LIMB_BIT_LEN+1
     // Refer to readme for more detail
-    let k_range = 12..=12;
+    let k = 12;
     let range_repeats = 2_u32.pow(3);
 
     let inputs: Vec<Input<Fp>> = (2..15)
@@ -457,7 +459,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Prepare benching for verifier key generation
     let mut verifier_key_generation = c.benchmark_group("Range Verifier Key Generation");
     verifier_key_generation.sample_size(10);
-    for k in k_range.clone() {
+    {
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
 
         verifier_key_generation.bench_with_input(
@@ -475,7 +477,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Prepare benching for prover key generation
     let mut prover_key_generation = c.benchmark_group("Range Prover Key Generation");
     prover_key_generation.sample_size(10);
-    for k in k_range.clone() {
+    {
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
         let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
 
@@ -495,7 +497,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Prepare benching for proof generation
     let mut proof_generation = c.benchmark_group("Range Proof Generation");
     proof_generation.sample_size(10);
-    for k in k_range.clone() {
+    {
         let circuit = TestCircuit::<Fp> {
             inputs: inputs.clone(),
             range_repeats: range_repeats,
@@ -529,7 +531,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Prepare benching for proof verification
     let mut proof_verification = c.benchmark_group("Range Proof Verification");
     proof_verification.sample_size(10);
-    for k in k_range.clone() {
+    {
         let circuit = TestCircuit::<Fp> {
             inputs: inputs.clone(),
             range_repeats: range_repeats,

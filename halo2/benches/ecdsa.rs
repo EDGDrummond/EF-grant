@@ -2,38 +2,37 @@
 extern crate criterion;
 use criterion::{BenchmarkId, Criterion};
 
-use halo2wrong::halo2::halo2curves::bn256::{Bn256, G1Affine};
-use halo2wrong::halo2::plonk::*;
-use halo2wrong::halo2::poly::commitment::ParamsProver;
-use halo2wrong::halo2::poly::kzg::commitment::KZGCommitmentScheme;
-use halo2wrong::halo2::poly::kzg::commitment::ParamsKZG;
-use halo2wrong::halo2::poly::kzg::multiopen::ProverGWC;
-use halo2wrong::halo2::poly::kzg::multiopen::VerifierGWC;
-use halo2wrong::halo2::poly::kzg::strategy::SingleStrategy;
-use halo2wrong::halo2::transcript::{
-    Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+use halo2wrong::{
+    curves::{bn256::Fr as BnScalar, secp256k1::Secp256k1Affine as Secp256k1},
+    halo2::{
+        arithmetic::{CurveAffine, FieldExt},
+        circuit::{Layouter, SimpleFloorPlanner, Value},
+        halo2curves::bn256::{Bn256, G1Affine},
+        plonk::*,
+        poly::{
+            commitment::ParamsProver,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG},
+                multiopen::{ProverGWC, VerifierGWC},
+                strategy::SingleStrategy,
+            },
+        },
+        transcript::{
+            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+        },
+    },
 };
 use rand_core::OsRng;
 
-use ecc::integer::Range;
-use ecc::maingate::big_to_fe;
-use ecc::maingate::fe_to_big;
-use ecc::maingate::RegionCtx;
-use ecc::{EccConfig, GeneralEccChip};
+use ecc::{integer::Range, EccConfig, GeneralEccChip};
 use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
-use group::ff::Field;
-use group::{Curve, Group};
-use halo2wrong::halo2::arithmetic::CurveAffine;
-use halo2wrong::halo2::arithmetic::FieldExt;
-use halo2wrong::halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
-use halo2wrong::halo2::plonk::{Circuit, ConstraintSystem, Error};
+use group::{ff::Field, Curve, Group};
 use integer::IntegerInstructions;
-use maingate::mock_prover_verify;
-use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions};
+use maingate::{
+    big_to_fe, fe_to_big, mock_prover_verify, MainGate, MainGateConfig, RangeChip, RangeConfig,
+    RangeInstructions, RegionCtx,
+};
 use std::marker::PhantomData;
-
-use halo2wrong::curves::bn256::Fr as BnScalar;
-use halo2wrong::curves::secp256k1::Secp256k1Affine as Secp256k1;
 
 const BIT_LEN_LIMB: usize = 68;
 const NUMBER_OF_LIMBS: usize = 4;
@@ -222,14 +221,14 @@ fn criterion_benchmark(c: &mut Criterion) {
         (circuit, instance)
     }
 
-    let k_range = 18..=18;
+    let k = 18;
 
     let (circuit, _) = run::<Secp256k1, BnScalar>();
 
     // Prepare benching for verifier key generation
     let mut verifier_key_generation = c.benchmark_group("ECDSA Verifier Key Generation");
     verifier_key_generation.sample_size(10);
-    for k in k_range.clone() {
+    {
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
 
         verifier_key_generation.bench_with_input(
@@ -247,7 +246,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Prepare benching for prover key generation
     let mut prover_key_generation = c.benchmark_group("ECDSA Prover Key Generation");
     prover_key_generation.sample_size(10);
-    for k in k_range.clone() {
+    {
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
         let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
 
@@ -266,7 +265,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Prepare benching for proof generation
     let mut proof_generation = c.benchmark_group("ECDSA Proof Generation");
     proof_generation.sample_size(10);
-    for k in k_range.clone() {
+    {
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
         let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
         let pk = keygen_pk(&params, vk, &circuit).expect("keygen_pk should not fail");
@@ -296,7 +295,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Prepare benching for proof verification
     let mut proof_verification = c.benchmark_group("ECDSA Proof Verification");
     proof_verification.sample_size(10);
-    for k in k_range.clone() {
+    {
         let params: ParamsKZG<Bn256> = ParamsKZG::new(k);
         let strategy = SingleStrategy::new(&params);
         let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");

@@ -2,20 +2,21 @@
 extern crate criterion;
 use criterion::{BenchmarkId, Criterion};
 
-use halo2_proofs::halo2curves::bn256::{Bn256, Fr as Fp, G1Affine};
-use halo2_proofs::poly::commitment::ParamsProver;
-use halo2_proofs::poly::kzg::commitment::KZGCommitmentScheme;
-use halo2_proofs::poly::kzg::commitment::ParamsKZG;
-use halo2_proofs::poly::kzg::multiopen::ProverGWC;
-use halo2_proofs::poly::kzg::multiopen::VerifierGWC;
-use halo2_proofs::poly::kzg::strategy::SingleStrategy;
-use halo2_proofs::transcript::{TranscriptReadBuffer, TranscriptWriterBuffer};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Cell, Layouter, SimpleFloorPlanner, Value},
+    halo2curves::bn256::{Bn256, Fr as Fp, G1Affine},
     plonk::*,
-    poly::Rotation,
-    transcript::{Blake2bRead, Blake2bWrite, Challenge255},
+    poly::{
+        commitment::ParamsProver,
+        kzg::commitment::{KZGCommitmentScheme, ParamsKZG},
+        kzg::multiopen::{ProverGWC, VerifierGWC},
+        kzg::strategy::SingleStrategy,
+        Rotation,
+    },
+    transcript::{
+        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+    },
 };
 use rand_core::OsRng;
 
@@ -285,12 +286,12 @@ fn criterion_benchmark(c: &mut Criterion) {
     let a_value = Value::known(Fp::from(2));
 
     // Initialise the benching parameter
-    let k_range = 10..=10;
+    let k = 10;
 
     // Prepare benching for verifier key generation
     let mut verifier_key_generation = c.benchmark_group("IsZero Verifier Key Generation");
     verifier_key_generation.sample_size(10);
-    for k in k_range.clone() {
+    {
         let empty_circuit: MyCircuit<Fp> = MyCircuit {
             a: Value::unknown(),
             k,
@@ -312,7 +313,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Prepare benching for prover key generation
     let mut prover_key_generation = c.benchmark_group("IsZero Prover Key Generation");
     prover_key_generation.sample_size(10);
-    for k in k_range.clone() {
+    {
         let empty_circuit: MyCircuit<Fp> = MyCircuit {
             a: Value::unknown(),
             k,
@@ -336,7 +337,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Prepare benching for proof generation
     let mut proof_generation = c.benchmark_group("IsZero Proof Generation");
     proof_generation.sample_size(10);
-    for k in k_range.clone() {
+    {
         let circuit: MyCircuit<Fp> = MyCircuit { a: a_value, k };
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
         let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
@@ -367,7 +368,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Prepare benching for proof verification
     let mut proof_verification = c.benchmark_group("IsZero Proof Verification");
     proof_verification.sample_size(10);
-    for k in k_range.clone() {
+    {
         let empty_circuit: MyCircuit<Fp> = MyCircuit {
             a: Value::unknown(),
             k,

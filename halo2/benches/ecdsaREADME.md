@@ -12,4 +12,7 @@ Prover Key Generation:     [4.4071 s 4.4747 s 4.5498 s]
 Proof Generation:          [19.086 s 19.146 s 19.222 s]  
 Proof Verification:        [11.081 ms 11.122 ms 11.169 ms]
 
+For comparison take a look at the equivalent values for ECDSA in circom from 0xparc
+https://github.com/0xPARC/circom-ecdsa
+
 Note: these bench figures were recorded on a 2020 M1 MacBook Air with 16GB RAM

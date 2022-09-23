@@ -2,17 +2,12 @@ Here we want to bench circom at various circuit sizes (just filled with the isze
 files prepared to do all of this, so benching just requires running those shell files that run it all and 
 delete created files once done.
 
-
-NOTE: Benching was achieved by installing bench via Haskell's stack tool.
 In order to run the benchmarking choose the circuit size you want to bench by inserting the correct power of 2
 in the `iszero.circom` file and then (assuming you're in the 'benchmarks' folder) run:
 `bash bench-iszero.sh`
 
-NOTE: You need to do a powers of tau ceremony yourself first locally as instructed on iden3's circom epxlainer,
-the generated files for 2^20 constraints were too large to store on git (of course you do not need to do it that big)
-
 TO-DO: When using the time command for circuit set-up, the 'user' time is more than the 'real' time.
-The former shuld always be less than the latter, something glitched. Probably because we are timing 3 
+The former should always be less than the latter, something glitched. Probably because we are timing 3 
 commands and not 1. Need to fix - also need to bench several rather than time 1
 
 

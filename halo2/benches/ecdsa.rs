@@ -180,7 +180,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         // Suppose `m_hash` is the message hash
         let msg_hash = <C as CurveAffine>::ScalarExt::random(OsRng);
 
-        // Draw arandomness
+        // Draw randomness
         let k = <C as CurveAffine>::ScalarExt::random(OsRng);
         let k_inv = k.invert().unwrap();
 

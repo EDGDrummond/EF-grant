@@ -11,8 +11,7 @@
 use crate::instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 use crate::{AssignedCondition, AssignedValue};
 use halo2wrong::halo2::arithmetic::FieldExt;
-use halo2wrong::halo2::circuit::Value;
-use halo2wrong::halo2::circuit::{Chip, Layouter};
+use halo2wrong::halo2::circuit::{Chip, Layouter, Value};
 use halo2wrong::halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance};
 use halo2wrong::halo2::poly::Rotation;
 use halo2wrong::RegionCtx;
@@ -63,36 +62,37 @@ impl ColumnTags<MainGateColumn> for MainGateColumn {
 /// Config defines fixed and witness columns of the main gate
 #[derive(Clone, Debug)]
 pub struct MainGateConfig {
-    /// part of config
+    /// column entry
     pub a: Column<Advice>,
-    /// part of config
+    /// column entry
     pub b: Column<Advice>,
-    /// part of config
+    /// column entry
     pub c: Column<Advice>,
-    /// part of config
+    /// column entry
     pub d: Column<Advice>,
-    /// part of config
+    /// column entry
     pub e: Column<Advice>,
-    /// part of config
-    pub sa: Column<Fixed>,
-    /// part of config
-    pub sb: Column<Fixed>,
-    /// part of config
-    pub sc: Column<Fixed>,
-    /// part of config
-    pub sd: Column<Fixed>,
-    /// part of config
-    pub se: Column<Fixed>,
-    /// part of config
-    pub se_next: Column<Fixed>,
-    /// part of config
-    pub s_mul_ab: Column<Fixed>,
-    /// part of config
-    pub s_mul_cd: Column<Fixed>,
-    /// part of config
-    pub s_constant: Column<Fixed>,
-    /// part of config
-    pub instance: Column<Instance>,
+
+    pub(crate) sa: Column<Fixed>,
+    pub(crate) sb: Column<Fixed>,
+    pub(crate) sc: Column<Fixed>,
+    pub(crate) sd: Column<Fixed>,
+    pub(crate) se: Column<Fixed>,
+
+    pub(crate) se_next: Column<Fixed>,
+
+    pub(crate) s_mul_ab: Column<Fixed>,
+    pub(crate) s_mul_cd: Column<Fixed>,
+
+    pub(crate) s_constant: Column<Fixed>,
+    pub(crate) instance: Column<Instance>,
+}
+
+impl MainGateConfig {
+    /// Returns advice columns of `MainGateConfig`
+    pub fn advices(&self) -> [Column<Advice>; WIDTH] {
+        [self.a, self.b, self.c, self.d, self.e]
+    }
 }
 
 /// MainGate implements instructions with [`MainGateConfig`]

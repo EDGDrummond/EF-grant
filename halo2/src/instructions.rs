@@ -4,7 +4,6 @@
 
 use crate::{AssignedCondition, AssignedValue, ColumnTags, MainGateColumn};
 use halo2wrong::{
-    halo2::plonk::Selector,
     halo2::{
         arithmetic::{Field, FieldExt},
         circuit::{Chip, Layouter, Value},
@@ -1001,12 +1000,12 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// Assigns a new witness composed of given array of terms
     /// `result = constant + term_0 + term_1 + ... `
     /// where `term_i = a_i * q_i`
-    fn decompose<T: FnMut(bool) -> Vec<Selector>>(
+    fn decompose<T: FnMut(&mut RegionCtx<'_, F>, bool) -> Result<(), Error>>(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         terms: &[Term<F>],
         constant: F,
-        mut fetch_tables: T,
+        mut enable_lookup: T,
     ) -> Result<(AssignedValue<F>, Vec<AssignedValue<F>>), Error> {
         assert!(!terms.is_empty(), "At least one term is expected");
 
@@ -1052,11 +1051,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                 CombinationOptionCommon::CombineToNextAdd(F::one())
             };
 
-            // Enable tables if there is any
-            let tables = fetch_tables(is_final);
-            for table in tables {
-                ctx.enable(table)?;
-            }
+            enable_lookup(ctx, is_final)?;
 
             let chunk_len = chunk.len();
             let mut combined = self.apply(
@@ -1096,7 +1091,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         constant: F,
     ) -> Result<AssignedValue<F>, Error> {
         assert!(!terms.is_empty(), "At least one term is expected");
-        let (composed, _) = self.decompose(ctx, terms, constant, |_| vec![])?;
+        let (composed, _) = self.decompose(ctx, terms, constant, |_, _| Ok(()))?;
 
         Ok(composed)
     }

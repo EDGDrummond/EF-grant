@@ -2,10 +2,12 @@
 extern crate criterion;
 use criterion::{BenchmarkId, Criterion};
 
+use ecc::maingate::MainGateConfig;
 use halo2wrong::{
     halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
+        dev::MockProver,
         halo2curves::bn256::{Bn256, Fr as Fp, G1Affine},
         plonk::*,
         poly::{
@@ -20,7 +22,7 @@ use halo2wrong::{
     },
     RegionCtx,
 };
-use maingate::{MainGate, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, Term};
+use maingate::{MainGate, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions};
 use rand_core::OsRng;
 
 /// Maximum number of cells in one line enabled with composition selector
@@ -30,6 +32,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     #[derive(Clone, Debug)]
     struct TestCircuitConfig {
         range_config: RangeConfig,
+        main_gate_config: MainGateConfig,
     }
 
     impl TestCircuitConfig {
@@ -46,11 +49,14 @@ fn criterion_benchmark(c: &mut Criterion) {
                 composition_bit_lens,
                 overflow_bit_lens,
             );
-            Self { range_config }
+            Self {
+                range_config,
+                main_gate_config,
+            }
         }
 
         fn main_gate<F: FieldExt>(&self) -> MainGate<F> {
-            MainGate::<F>::new(self.range_config.main_gate_config.clone())
+            MainGate::<F>::new(self.main_gate_config.clone())
         }
 
         fn range_chip<F: FieldExt>(&self) -> RangeChip<F> {
@@ -123,24 +129,46 @@ fn criterion_benchmark(c: &mut Criterion) {
                         let offset = 0;
                         let ctx = &mut RegionCtx::new(region, offset);
 
-                        for input in self.inputs.iter() {
+                        for (index, input) in self.inputs.iter().enumerate() {
                             let value = input.value;
                             let limb_bit_len = input.limb_bit_len;
                             let bit_len = input.bit_len;
 
                             let a_0 = main_gate.assign_value(ctx, value)?;
-                            let (a_1, decomposed) =
+                            let (a_1, _) =
                                 range_chip.decompose(ctx, value, limb_bit_len, bit_len)?;
-
                             main_gate.assert_equal(ctx, &a_0, &a_1)?;
 
-                            let terms: Vec<Term<F>> = decomposed
-                                .iter()
-                                .zip(range_chip.bases(limb_bit_len))
-                                .map(|(limb, base)| Term::Assigned(limb, *base))
-                                .collect();
-                            let a_1 = main_gate.compose(ctx, &terms[..], F::zero())?;
-                            main_gate.assert_equal(ctx, &a_0, &a_1)?;
+                            // Turn 2^something - 1 into 2^something
+                            let two_power = main_gate.add_constant(ctx, &a_0, F::one())?;
+                            let overflow_bit_len = main_gate.assign_value(
+                                ctx,
+                                Value::known(F::from_u128(
+                                    (2_i32.pow(OVERFLOW_BIT_LEN.try_into().unwrap())) as u128,
+                                )),
+                            )?;
+                            // Turn power from index*LBL+OBL into index*LBL
+                            let (adjusted, _) =
+                                main_gate.div(ctx, &two_power, &overflow_bit_len)?;
+                            let to_be_removed = main_gate.assign_value(
+                                ctx,
+                                Value::known(F::from_u128(
+                                    (2_i32.pow(
+                                        ((index + 2) * (LIMB_BIT_LEN - 1)).try_into().unwrap(),
+                                    )) as u128,
+                                )),
+                            )?;
+                            // Turn power from index*LBL into index
+                            let (fully_adjusted, _) =
+                                main_gate.div(ctx, &adjusted, &to_be_removed)?;
+
+                            let two_power = main_gate.assign_value(
+                                ctx,
+                                Value::known(F::from_u128(
+                                    (2_i32.pow((index + 2).try_into().unwrap())) as u128,
+                                )),
+                            )?;
+                            main_gate.assert_equal(ctx, &two_power, &fully_adjusted)?;
                         }
 
                         Ok(())
@@ -156,12 +184,11 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     const LIMB_BIT_LEN: usize = 8;
     const OVERFLOW_BIT_LEN: usize = 3;
-    // Initialise the benching parameter, note that minimum k per iteration of range gadget is LIMB_BIT_LEN+1
-    // Refer to readme for more detail
-    let k = 14;
-    let range_repeats = 2_u32.pow(7);
+    // Initialise the benching parameters
+    let k = 12;
+    let range_repeats = 2_u32.pow(1);
 
-    let inputs: Vec<Input<Fp>> = (2..15)
+    let inputs: Vec<Input<Fp>> = (2..5)
         .map(|number_of_limbs| {
             let bit_len = LIMB_BIT_LEN * number_of_limbs + OVERFLOW_BIT_LEN;
             Input {
@@ -171,6 +198,19 @@ fn criterion_benchmark(c: &mut Criterion) {
             }
         })
         .collect();
+
+    {
+        let circuit = TestCircuit::<Fp> {
+            inputs: inputs.clone(),
+            range_repeats: range_repeats,
+        };
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
 
     // Initialise circuit, and an empty version of it
     let circuit = TestCircuit::<Fp> {

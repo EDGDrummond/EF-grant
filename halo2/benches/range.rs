@@ -439,12 +439,12 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     impl<F: FieldExt> TestCircuit<F> {
-        fn composition_bit_lens() -> Vec<usize> {
-            vec![8]
+        fn composition_bit_lens(limb_bit_len: usize) -> Vec<usize> {
+            vec![limb_bit_len]
         }
 
-        fn overflow_bit_lens() -> Vec<usize> {
-            vec![3]
+        fn overflow_bit_lens(overflow_bit_len: usize) -> Vec<usize> {
+            vec![overflow_bit_len]
         }
     }
 
@@ -470,8 +470,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             TestCircuitConfig::new(
                 meta,
-                Self::composition_bit_lens(),
-                Self::overflow_bit_lens(),
+                Self::composition_bit_lens(LIMB_BIT_LEN),
+                Self::overflow_bit_lens(OVERFLOW_BIT_LEN),
             )
         }
 
@@ -521,27 +521,25 @@ fn criterion_benchmark(c: &mut Criterion) {
         }
     }
 
+    // Set lbl and obl values depending upon the breakdown of the value required. (uncomment one set)
+    // Note that minimum k per iteration of range gadget is LIMB_BIT_LEN+1
     const LIMB_BIT_LEN: usize = 8;
-    const OVERFLOW_BIT_LEN: usize = 3;
-    // Initialise the benching parameter, note that minimum k per iteration of range gadget is LIMB_BIT_LEN+1
-    // Refer to readme for more detail
-    let k = 14;
-    let range_repeats = 2_u32.pow(7);
-
-    let inputs: Vec<Input<Fp>> = (2..15)
-        .map(|number_of_limbs| {
-            let bit_len = LIMB_BIT_LEN * number_of_limbs + OVERFLOW_BIT_LEN;
-            Input {
-                value: Value::known(Fp::from_u128((1 << bit_len) - 1)),
-                limb_bit_len: LIMB_BIT_LEN,
-                bit_len,
-            }
-        })
-        .collect();
+    const OVERFLOW_BIT_LEN: usize = 1;
+    let k = 9;
+    // const LIMB_BIT_LEN: usize = 9;
+    // const OVERFLOW_BIT_LEN: usize = 2;
+    // let k = 10;
+    let input = vec![Input {
+        value: Value::known(Fp::from_u128((1 << 65) - 1)),
+        limb_bit_len: LIMB_BIT_LEN,
+        bit_len: 65,
+    }];
+    // `range_repeats` is provided to bench larger versions of the circuit (simply repeats the computation)
+    let range_repeats = 2_u32.pow(1);
 
     // Initialise circuit, and an empty version of it
     let circuit = TestCircuit::<Fp> {
-        inputs: inputs.clone(),
+        inputs: input.clone(),
         range_repeats: range_repeats,
     };
     let empty_circuit = circuit.clone().without_witnesses();
@@ -589,7 +587,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     proof_generation.sample_size(10);
     {
         let circuit = TestCircuit::<Fp> {
-            inputs: inputs.clone(),
+            inputs: input.clone(),
             range_repeats: range_repeats,
         };
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
@@ -623,7 +621,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     proof_verification.sample_size(10);
     {
         let circuit = TestCircuit::<Fp> {
-            inputs: inputs.clone(),
+            inputs: input.clone(),
             range_repeats: range_repeats,
         };
         let params: ParamsKZG<Bn256> = ParamsKZG::new(k);

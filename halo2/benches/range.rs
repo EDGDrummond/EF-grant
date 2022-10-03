@@ -2,11 +2,11 @@
 extern crate criterion;
 use criterion::{BenchmarkId, Criterion};
 
-use halo2::{AssignedValue, MainGate, MainGateConfig, MainGateInstructions, Term};
 use halo2wrong::{
     halo2::{
         arithmetic::FieldExt,
-        circuit::{Chip, Layouter, SimpleFloorPlanner, Value},
+        circuit::{Layouter, SimpleFloorPlanner, Value},
+        dev::MockProver,
         halo2curves::bn256::{Bn256, Fr as Fp, G1Affine},
         plonk::*,
         poly::{
@@ -14,389 +14,27 @@ use halo2wrong::{
             kzg::commitment::{KZGCommitmentScheme, ParamsKZG},
             kzg::multiopen::{ProverGWC, VerifierGWC},
             kzg::strategy::SingleStrategy,
-            Rotation,
         },
         transcript::{
             Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
     },
-    utils::decompose,
     RegionCtx,
+};
+use maingate::{
+    MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, Term,
 };
 use num_integer::Integer;
 use rand_core::OsRng;
-use std::collections::{BTreeMap, BTreeSet};
 
 /// Maximum number of cells in one line enabled with composition selector
 pub const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    /// Range gate configuration
-    #[derive(Clone, Debug)]
-    pub struct RangeConfig {
-        main_gate_config: MainGateConfig,
-        bit_len_tag: BTreeMap<usize, usize>,
-        t_tag: TableColumn,
-        t_value: TableColumn,
-        s_composition: Selector,
-        tag_composition: Option<Column<Fixed>>,
-        s_overflow: Option<Selector>,
-        tag_overflow: Option<Column<Fixed>>,
-    }
-
-    /// ['RangeChip'] applies binary range constraints
-    #[derive(Clone, Debug)]
-    pub struct RangeChip<F: FieldExt> {
-        config: RangeConfig,
-        main_gate: MainGate<F>,
-        bases: BTreeMap<usize, Vec<F>>,
-    }
-
-    impl<F: FieldExt> RangeChip<F> {
-        fn main_gate(&self) -> &MainGate<F> {
-            &self.main_gate
-        }
-    }
-
-    impl<F: FieldExt> Chip<F> for RangeChip<F> {
-        type Config = RangeConfig;
-        type Loaded = ();
-        fn config(&self) -> &Self::Config {
-            &self.config
-        }
-        fn loaded(&self) -> &Self::Loaded {
-            &()
-        }
-    }
-
-    /// Generic chip interface for bitwise ranging values
-    pub trait RangeInstructions<F: FieldExt>: Chip<F> {
-        /// Assigns new witness
-        fn assign(
-            &self,
-            ctx: &mut RegionCtx<'_, F>,
-            unassigned: Value<F>,
-            limb_bit_len: usize,
-            bit_len: usize,
-        ) -> Result<AssignedValue<F>, Error>;
-
-        /// Decomposes and assign new witness
-        fn decompose(
-            &self,
-            ctx: &mut RegionCtx<'_, F>,
-            unassigned: Value<F>,
-            limb_bit_len: usize,
-            bit_len: usize,
-        ) -> Result<(AssignedValue<F>, Vec<AssignedValue<F>>), Error>;
-
-        /// Load table in sythnesis time
-        fn load_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
-    }
-
-    impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
-        fn assign(
-            &self,
-            ctx: &mut RegionCtx<'_, F>,
-            unassigned: Value<F>,
-            limb_bit_len: usize,
-            bit_len: usize,
-        ) -> Result<AssignedValue<F>, Error> {
-            let (assigned, _) = self.decompose(ctx, unassigned, limb_bit_len, bit_len)?;
-            Ok(assigned)
-        }
-
-        fn decompose(
-            &self,
-            ctx: &mut RegionCtx<'_, F>,
-            unassigned: Value<F>,
-            limb_bit_len: usize,
-            bit_len: usize,
-        ) -> Result<(AssignedValue<F>, Vec<AssignedValue<F>>), Error> {
-            let (number_of_limbs, overflow_bit_len) = bit_len.div_rem(&limb_bit_len);
-
-            let number_of_limbs = number_of_limbs + if overflow_bit_len > 0 { 1 } else { 0 };
-            let decomposed = unassigned
-                .map(|unassigned| decompose(unassigned, number_of_limbs, limb_bit_len))
-                .transpose_vec(number_of_limbs);
-
-            let terms: Vec<Term<F>> = decomposed
-                .into_iter()
-                .zip(self.bases(limb_bit_len))
-                .map(|(limb, base)| Term::Unassigned(limb, *base))
-                .collect();
-
-            self.main_gate()
-                .decompose(ctx, &terms[..], F::zero(), |ctx, is_last| {
-                    let composition_tag = self
-                        .config
-                        .bit_len_tag
-                        .get(&limb_bit_len)
-                        .unwrap_or_else(|| {
-                            panic!("composition table is not set, bit lenght: {limb_bit_len}")
-                        });
-                    ctx.enable(self.config.s_composition)?;
-                    if let Some(tag_composition) = self.config.tag_composition {
-                        ctx.assign_fixed(
-                            || "tag_composition",
-                            tag_composition,
-                            F::from(*composition_tag as u64),
-                        )?;
-                    }
-
-                    if is_last && overflow_bit_len != 0 {
-                        let overflow_tag = self
-                            .config
-                            .bit_len_tag
-                            .get(&overflow_bit_len)
-                            .unwrap_or_else(|| {
-                                panic!("overflow table is not set, bit lenght: {overflow_bit_len}")
-                            });
-                        ctx.enable(self.config.s_overflow.unwrap())?;
-                        if let Some(tag_overflow) = self.config.tag_overflow {
-                            ctx.assign_fixed(
-                                || "tag_overflow",
-                                tag_overflow,
-                                F::from(*overflow_tag as u64),
-                            )?;
-                        }
-                    }
-
-                    Ok(())
-                })
-        }
-
-        fn load_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-            layouter.assign_table(
-                || "",
-                |mut table| {
-                    let mut offset = 0;
-
-                    table.assign_cell(
-                        || "table tag",
-                        self.config.t_tag,
-                        offset,
-                        || Value::known(F::zero()),
-                    )?;
-                    table.assign_cell(
-                        || "table value",
-                        self.config.t_value,
-                        offset,
-                        || Value::known(F::zero()),
-                    )?;
-                    offset += 1;
-
-                    for (bit_len, tag) in self.config.bit_len_tag.iter() {
-                        let tag = F::from(*tag as u64);
-                        let table_values: Vec<F> = (0..1 << bit_len).map(|e| F::from(e)).collect();
-                        for value in table_values.iter() {
-                            table.assign_cell(
-                                || "table tag",
-                                self.config.t_tag,
-                                offset,
-                                || Value::known(tag),
-                            )?;
-                            table.assign_cell(
-                                || "table value",
-                                self.config.t_value,
-                                offset,
-                                || Value::known(*value),
-                            )?;
-                            offset += 1;
-                        }
-                    }
-
-                    Ok(())
-                },
-            )?;
-
-            Ok(())
-        }
-    }
-
-    impl<F: FieldExt> RangeChip<F> {
-        /// Given config creates new chip that implements ranging
-        pub fn new(config: RangeConfig) -> Self {
-            let main_gate = MainGate::new(config.main_gate_config.clone());
-            let bases = config
-                .bit_len_tag
-                .keys()
-                .filter_map(|&bit_len| {
-                    if bit_len == 0 {
-                        None
-                    } else {
-                        let bases = (0..F::NUM_BITS as usize / bit_len)
-                            .map(|i| F::from(2).pow(&[(bit_len * i) as u64, 0, 0, 0]))
-                            .collect();
-                        Some((bit_len, bases))
-                    }
-                })
-                .collect();
-            Self {
-                config,
-                main_gate,
-                bases,
-            }
-        }
-
-        /// Configures subset argument and returns the
-        /// resuiting config
-        pub fn configure(
-            meta: &mut ConstraintSystem<F>,
-            main_gate_config: &MainGateConfig,
-            composition_bit_lens: Vec<usize>,
-            overflow_bit_lens: Vec<usize>,
-        ) -> RangeConfig {
-            let [composition_bit_lens, overflow_bit_lens] =
-                [composition_bit_lens, overflow_bit_lens].map(|mut bit_lens| {
-                    bit_lens.sort_unstable();
-                    bit_lens.dedup();
-                    bit_lens
-                });
-
-            let bit_len_tag = BTreeMap::from_iter(
-                BTreeSet::from_iter(composition_bit_lens.iter().chain(overflow_bit_lens.iter()))
-                    .into_iter()
-                    .enumerate()
-                    .map(|(idx, bit_len)| (*bit_len, idx + 1)),
-            );
-
-            let t_tag = meta.lookup_table_column();
-            let t_value = meta.lookup_table_column();
-
-            // TODO: consider for a generic MainGateConfig
-            let &MainGateConfig { a, b, c, d, .. } = main_gate_config;
-
-            let s_composition = meta.complex_selector();
-            let tag_composition = if composition_bit_lens.len() > 1 {
-                let tag = meta.fixed_column();
-                for (name, value) in [
-                    ("composition_a", a),
-                    ("composition_b", b),
-                    ("composition_c", c),
-                    ("composition_d", d),
-                ] {
-                    Self::configure_lookup_with_column_tag(
-                        meta,
-                        name,
-                        s_composition,
-                        tag,
-                        value,
-                        t_tag,
-                        t_value,
-                    )
-                }
-                Some(tag)
-            } else {
-                for (name, value) in [
-                    ("composition_a", a),
-                    ("composition_b", b),
-                    ("composition_c", c),
-                    ("composition_d", d),
-                ] {
-                    Self::configure_lookup_with_constant_tag(
-                        meta,
-                        name,
-                        s_composition,
-                        bit_len_tag[&composition_bit_lens[0]],
-                        value,
-                        t_tag,
-                        t_value,
-                    )
-                }
-                None
-            };
-
-            let (s_overflow, tag_overflow) = if !overflow_bit_lens.is_empty() {
-                let s_overflow = meta.complex_selector();
-                let tag_overflow = if overflow_bit_lens.len() > 1 {
-                    let tag = meta.fixed_column();
-                    Self::configure_lookup_with_column_tag(
-                        meta,
-                        "overflow_a",
-                        s_overflow,
-                        tag,
-                        a,
-                        t_tag,
-                        t_value,
-                    );
-                    Some(tag)
-                } else {
-                    Self::configure_lookup_with_constant_tag(
-                        meta,
-                        "overflow_a",
-                        s_overflow,
-                        bit_len_tag[&overflow_bit_lens[0]],
-                        a,
-                        t_tag,
-                        t_value,
-                    );
-                    None
-                };
-
-                (Some(s_overflow), tag_overflow)
-            } else {
-                (None, None)
-            };
-
-            RangeConfig {
-                main_gate_config: main_gate_config.clone(),
-                bit_len_tag,
-                t_tag,
-                t_value,
-                s_composition,
-                tag_composition,
-                s_overflow,
-                tag_overflow,
-            }
-        }
-
-        fn configure_lookup_with_column_tag(
-            meta: &mut ConstraintSystem<F>,
-            name: &'static str,
-            selector: Selector,
-            tag: Column<Fixed>,
-            value: Column<Advice>,
-            t_tag: TableColumn,
-            t_value: TableColumn,
-        ) {
-            meta.lookup(name, |meta| {
-                let selector = meta.query_selector(selector);
-                let tag = meta.query_fixed(tag, Rotation::cur());
-                let value = meta.query_advice(value, Rotation::cur());
-                vec![(tag, t_tag), (selector * value, t_value)]
-            });
-        }
-
-        fn configure_lookup_with_constant_tag(
-            meta: &mut ConstraintSystem<F>,
-            name: &'static str,
-            selector: Selector,
-            tag: usize,
-            value: Column<Advice>,
-            t_tag: TableColumn,
-            t_value: TableColumn,
-        ) {
-            meta.lookup(name, |meta| {
-                let selector = meta.query_selector(selector);
-                let tag = selector.clone() * Expression::Constant(F::from(tag as u64));
-                let value = meta.query_advice(value, Rotation::cur());
-                vec![(tag, t_tag), (selector * value, t_value)]
-            });
-        }
-
-        fn bases(&self, limb_bit_len: usize) -> &[F] {
-            self.bases
-                .get(&limb_bit_len)
-                .unwrap_or_else(|| {
-                    panic!("composition table is not set, bit lenght: {}", limb_bit_len)
-                })
-                .as_slice()
-        }
-    }
-
     #[derive(Clone, Debug)]
     struct TestCircuitConfig {
         range_config: RangeConfig,
+        main_gate_config: MainGateConfig,
     }
 
     impl TestCircuitConfig {
@@ -413,11 +51,14 @@ fn criterion_benchmark(c: &mut Criterion) {
                 composition_bit_lens,
                 overflow_bit_lens,
             );
-            Self { range_config }
+            Self {
+                range_config,
+                main_gate_config,
+            }
         }
 
         fn main_gate<F: FieldExt>(&self) -> MainGate<F> {
-            MainGate::<F>::new(self.range_config.main_gate_config.clone())
+            MainGate::<F>::new(self.main_gate_config.clone())
         }
 
         fn range_chip<F: FieldExt>(&self) -> RangeChip<F> {
@@ -440,11 +81,11 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     impl<F: FieldExt> TestCircuit<F> {
         fn composition_bit_lens(limb_bit_len: usize) -> Vec<usize> {
-            vec![limb_bit_len]
+            [limb_bit_len].to_vec()
         }
 
-        fn overflow_bit_lens(overflow_bit_len: usize) -> Vec<usize> {
-            vec![overflow_bit_len]
+        fn overflow_bit_lens(overflow_bit_len: [usize; 2]) -> Vec<usize> {
+            overflow_bit_len.to_vec()
         }
     }
 
@@ -501,9 +142,25 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                             main_gate.assert_equal(ctx, &a_0, &a_1)?;
 
+                            let mut bases: Vec<F> = Vec::new();
+
+                            let (num_limbs, overflow_len) = bit_len.div_rem(&limb_bit_len);
+
+                            for i in 0..num_limbs {
+                                bases.push(F::from(2).pow(&[(limb_bit_len * i) as u64, 0, 0, 0]));
+                            }
+                            if overflow_len != 0 {
+                                bases.push(F::from(2).pow(&[
+                                    (limb_bit_len * num_limbs) as u64,
+                                    0,
+                                    0,
+                                    0,
+                                ]));
+                            }
+
                             let terms: Vec<Term<F>> = decomposed
                                 .iter()
-                                .zip(range_chip.bases(limb_bit_len))
+                                .zip(bases.as_slice())
                                 .map(|(limb, base)| Term::Assigned(limb, *base))
                                 .collect();
                             let a_1 = main_gate.compose(ctx, &terms[..], F::zero())?;
@@ -521,19 +178,29 @@ fn criterion_benchmark(c: &mut Criterion) {
         }
     }
 
-    // Set lbl and obl values depending upon the breakdown of the value required. (uncomment one set)
-    // Note that minimum k per iteration of range gadget is LIMB_BIT_LEN+1
+    // Set lbl and obl values depending upon the breakdown of the values required
     const LIMB_BIT_LEN: usize = 8;
-    const OVERFLOW_BIT_LEN: usize = 1;
-    let k = 9;
-    // const LIMB_BIT_LEN: usize = 9;
-    // const OVERFLOW_BIT_LEN: usize = 2;
-    // let k = 10;
-    let input = vec![Input {
-        value: Value::known(Fp::from_u128((1 << 65) - 1)),
-        limb_bit_len: LIMB_BIT_LEN,
-        bit_len: 65,
-    }];
+    const OVERFLOW_BIT_LEN: [usize; 2] = [4, 3];
+    let k = 12;
+    let first = 68;
+    let second = 67;
+    let input = vec![
+        Input {
+            value: Value::known(Fp::from_u128((1 << first) - 1)),
+            limb_bit_len: 8,
+            bit_len: first,
+        },
+        Input {
+            value: Value::known(Fp::from_u128((1 << second) - 1)),
+            limb_bit_len: 8,
+            bit_len: second,
+        },
+        Input {
+            value: Value::known(Fp::from_u128((1 << 30) - 1)),
+            limb_bit_len: 8,
+            bit_len: first,
+        },
+    ];
     // `range_repeats` is provided to bench larger versions of the circuit (simply repeats the computation)
     let range_repeats = 2_u32.pow(1);
 
@@ -543,6 +210,48 @@ fn criterion_benchmark(c: &mut Criterion) {
         range_repeats: range_repeats,
     };
     let empty_circuit = circuit.clone().without_witnesses();
+
+    {
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    {
+        let circuit = TestCircuit::<Fp> {
+            inputs: input.clone(),
+            range_repeats: range_repeats,
+        };
+        let params: ParamsKZG<Bn256> = ParamsKZG::new(k);
+        let strategy = SingleStrategy::new(&params);
+        let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
+        let pk = keygen_pk(&params, vk, &circuit).expect("keygen_pk should not fail");
+        let mut transcript: Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>> =
+            Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<Bn256>, _, _, _, _>(
+            &params,
+            &pk,
+            &[circuit],
+            &[&[&[]]],
+            OsRng,
+            &mut transcript,
+        )
+        .expect("proof generation should not fail");
+        let proof = transcript.finalize();
+        let transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+
+        verify_proof::<_, VerifierGWC<Bn256>, _, _, _>(
+            &params,
+            pk.get_vk(),
+            strategy.clone(),
+            &[&[&[]]],
+            &mut transcript.clone(),
+        )
+        .unwrap();
+    }
 
     // Prepare benching for verifier key generation
     let mut verifier_key_generation = c.benchmark_group("Range Verifier Key Generation");

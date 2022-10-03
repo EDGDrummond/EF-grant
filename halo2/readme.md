@@ -10,6 +10,3 @@ Alternatively run one of the two below commands to bench all
 `cargo criterion --benches`
 
 NOTE: prover key generation conducts verifier key generation as part of its time
-
-The code for `main_gate.rs` and related files is taken from the halo2wrong repo. This is because to 
-run some of the circuits we needed to access struct fields or funcitons that were private.

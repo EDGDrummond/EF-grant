@@ -84,8 +84,8 @@ fn criterion_benchmark(c: &mut Criterion) {
             [limb_bit_len].to_vec()
         }
 
-        fn overflow_bit_lens(overflow_bit_len: [usize; 2]) -> Vec<usize> {
-            overflow_bit_len.to_vec()
+        fn overflow_bit_lens(overflow_bit_len: usize) -> Vec<usize> {
+            [overflow_bit_len].to_vec()
         }
     }
 
@@ -124,6 +124,18 @@ fn criterion_benchmark(c: &mut Criterion) {
             let range_chip = config.range_chip();
             let main_gate = config.main_gate();
 
+            // Create bases once
+            let limb_bit_len = self.inputs.last().unwrap().limb_bit_len;
+            let bit_len = self.inputs.last().unwrap().bit_len;
+            let mut bases: Vec<F> = Vec::new();
+            let (num_limbs, overflow_len) = bit_len.div_rem(&limb_bit_len);
+            for i in 0..num_limbs {
+                bases.push(F::from(2).pow(&[(limb_bit_len * i) as u64, 0, 0, 0]));
+            }
+            if overflow_len != 0 {
+                bases.push(F::from(2).pow(&[(limb_bit_len * num_limbs) as u64, 0, 0, 0]));
+            }
+
             for _ in 0..self.range_repeats {
                 layouter.assign_region(
                     || "region 0",
@@ -141,22 +153,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                                 range_chip.decompose(ctx, value, limb_bit_len, bit_len)?;
 
                             main_gate.assert_equal(ctx, &a_0, &a_1)?;
-
-                            let mut bases: Vec<F> = Vec::new();
-
-                            let (num_limbs, overflow_len) = bit_len.div_rem(&limb_bit_len);
-
-                            for i in 0..num_limbs {
-                                bases.push(F::from(2).pow(&[(limb_bit_len * i) as u64, 0, 0, 0]));
-                            }
-                            if overflow_len != 0 {
-                                bases.push(F::from(2).pow(&[
-                                    (limb_bit_len * num_limbs) as u64,
-                                    0,
-                                    0,
-                                    0,
-                                ]));
-                            }
 
                             let terms: Vec<Term<F>> = decomposed
                                 .iter()
@@ -180,33 +176,27 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     // Set lbl and obl values depending upon the breakdown of the values required
     const LIMB_BIT_LEN: usize = 8;
-    const OVERFLOW_BIT_LEN: [usize; 2] = [4, 3];
-    let k = 12;
-    let first = 68;
-    let second = 67;
-    let input = vec![
-        Input {
-            value: Value::known(Fp::from_u128((1 << first) - 1)),
-            limb_bit_len: 8,
-            bit_len: first,
-        },
-        Input {
-            value: Value::known(Fp::from_u128((1 << second) - 1)),
-            limb_bit_len: 8,
-            bit_len: second,
-        },
-        Input {
-            value: Value::known(Fp::from_u128((1 << 30) - 1)),
-            limb_bit_len: 8,
-            bit_len: first,
-        },
-    ];
+    const OVERFLOW_BIT_LEN: usize = 2;
+
+    // Set circuit size
+    let k = 14;
     // `range_repeats` is provided to bench larger versions of the circuit (simply repeats the computation)
-    let range_repeats = 2_u32.pow(1);
+    let range_repeats = 2_u32.pow(7);
+
+    let inputs: Vec<Input<Fp>> = (2..15)
+        .map(|number_of_limbs| {
+            let bit_len = LIMB_BIT_LEN * number_of_limbs + OVERFLOW_BIT_LEN;
+            Input {
+                value: Value::known(Fp::from_u128((1 << bit_len) - 1)),
+                limb_bit_len: LIMB_BIT_LEN,
+                bit_len,
+            }
+        })
+        .collect();
 
     // Initialise circuit, and an empty version of it
     let circuit = TestCircuit::<Fp> {
-        inputs: input.clone(),
+        inputs: inputs.clone(),
         range_repeats: range_repeats,
     };
     let empty_circuit = circuit.clone().without_witnesses();
@@ -222,7 +212,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     {
         let circuit = TestCircuit::<Fp> {
-            inputs: input.clone(),
+            inputs: inputs.clone(),
             range_repeats: range_repeats,
         };
         let params: ParamsKZG<Bn256> = ParamsKZG::new(k);
@@ -296,7 +286,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     proof_generation.sample_size(10);
     {
         let circuit = TestCircuit::<Fp> {
-            inputs: input.clone(),
+            inputs: inputs.clone(),
             range_repeats: range_repeats,
         };
         let params: ParamsKZG<Bn256> = ParamsKZG::<Bn256>::new(k);
@@ -330,7 +320,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     proof_verification.sample_size(10);
     {
         let circuit = TestCircuit::<Fp> {
-            inputs: input.clone(),
+            inputs: inputs.clone(),
             range_repeats: range_repeats,
         };
         let params: ParamsKZG<Bn256> = ParamsKZG::new(k);

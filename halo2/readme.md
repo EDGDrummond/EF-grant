@@ -8,5 +8,3 @@ Alternatively run one of the two below commands to bench all
 
 `cargo bench`
 `cargo criterion --benches`
-
-NOTE: prover key generation conducts verifier key generation as part of its time

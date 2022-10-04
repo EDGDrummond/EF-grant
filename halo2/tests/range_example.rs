@@ -2,17 +2,9 @@ use halo2wrong::{
     halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
-        halo2curves::bn256::{Bn256, Fr as Fp, G1Affine},
+        dev::MockProver,
+        halo2curves::bn256::Fr as Fp,
         plonk::*,
-        poly::{
-            commitment::ParamsProver,
-            kzg::commitment::{KZGCommitmentScheme, ParamsKZG},
-            kzg::multiopen::{ProverGWC, VerifierGWC},
-            kzg::strategy::SingleStrategy,
-        },
-        transcript::{
-            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-        },
     },
     RegionCtx,
 };
@@ -20,7 +12,6 @@ use maingate::{
     MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, Term,
 };
 use num_integer::Integer;
-use rand_core::OsRng;
 
 /// Maximum number of cells in one line enabled with composition selector
 pub const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
@@ -124,16 +115,14 @@ impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
                     let value = input.value;
                     let limb_bit_len = input.limb_bit_len;
                     let bit_len = input.bit_len;
+                    let mut bases: Vec<F> = Vec::new();
+                    let (num_limbs, overflow_len) = bit_len.div_rem(&limb_bit_len);
 
                     let a_0 = main_gate.assign_value(ctx, value)?;
                     let (a_1, decomposed) =
                         range_chip.decompose(ctx, value, limb_bit_len, bit_len)?;
 
                     main_gate.assert_equal(ctx, &a_0, &a_1)?;
-
-                    let mut bases: Vec<F> = Vec::new();
-
-                    let (num_limbs, overflow_len) = bit_len.div_rem(&limb_bit_len);
 
                     for i in 0..num_limbs {
                         bases.push(F::from(2).pow(&[(limb_bit_len * i) as u64, 0, 0, 0]));
@@ -170,7 +159,7 @@ fn test_range_multi() {
     let k = 9;
     let first = 68;
     let second = 67;
-    let input = vec![
+    let mut inputs = vec![
         Input {
             value: Value::known(Fp::from_u128((1 << first) - 1)),
             limb_bit_len: 8,
@@ -186,42 +175,32 @@ fn test_range_multi() {
             limb_bit_len: 8,
             bit_len: first,
         },
-        // If you uncomment this input and try to produce a proof it will fail
-        // Input {
-        //     value: Value::known(Fp::from_u128((1 << 66) - 1)),
-        //     limb_bit_len: 8,
-        //     bit_len: 66,
-        // },
     ];
 
     // Initialise circuit, and an empty version of it
     let circuit = TestCircuit::<Fp> {
-        inputs: input.clone(),
+        inputs: inputs.clone(),
     };
-    let params: ParamsKZG<Bn256> = ParamsKZG::new(k);
-    let strategy = SingleStrategy::new(&params);
-    let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
-    let pk = keygen_pk(&params, vk, &circuit).expect("keygen_pk should not fail");
-    let mut transcript: Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>> =
-        Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-    create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<Bn256>, _, _, _, _>(
-        &params,
-        &pk,
-        &[circuit],
-        &[&[&[]]],
-        OsRng,
-        &mut transcript,
-    )
-    .expect("proof generation should not fail");
-    let proof = transcript.finalize();
-    let transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
 
-    verify_proof::<_, VerifierGWC<Bn256>, _, _, _>(
-        &params,
-        pk.get_vk(),
-        strategy.clone(),
-        &[&[&[]]],
-        &mut transcript.clone(),
-    )
-    .unwrap();
+    let public_inputs = vec![vec![]];
+    let prover = match MockProver::run(k, &circuit, public_inputs.clone()) {
+        Ok(prover) => prover,
+        Err(e) => panic!("{:#?}", e),
+    };
+    assert_eq!(prover.verify(), Ok(()));
+
+    // Add an input that is bigger than claimed; proof should fail
+    inputs.push(Input {
+        value: Value::known(Fp::from_u128((1 << 69) - 1)),
+        limb_bit_len: 8,
+        bit_len: 68,
+    });
+    let circuit = TestCircuit::<Fp> {
+        inputs: inputs.clone(),
+    };
+    let prover = match MockProver::run(k, &circuit, public_inputs) {
+        Ok(prover) => prover,
+        Err(e) => panic!("{:#?}", e),
+    };
+    assert_ne!(prover.verify(), Ok(()));
 }

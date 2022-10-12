@@ -29,8 +29,8 @@ use ecdsa::ecdsa::{AssignedEcdsaSig, AssignedPublicKey, EcdsaChip};
 use group::{ff::Field, Curve, Group};
 use integer::IntegerInstructions;
 use maingate::{
-    big_to_fe, fe_to_big, mock_prover_verify, MainGate, MainGateConfig, RangeChip, RangeConfig,
-    RangeInstructions, RegionCtx,
+    big_to_fe, fe_to_big, MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions,
+    RegionCtx,
 };
 use std::marker::PhantomData;
 
@@ -169,7 +169,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         big_to_fe(x_big)
     }
 
-    fn run<C: CurveAffine, N: FieldExt>() -> (TestCircuitEcdsaVerify<C, N>, Vec<Vec<N>>) {
+    fn run<C: CurveAffine, N: FieldExt>() -> TestCircuitEcdsaVerify<C, N> {
         let g = C::generator();
 
         // Generate a key pair
@@ -215,15 +215,13 @@ fn criterion_benchmark(c: &mut Criterion) {
             window_size: 2,
             ..Default::default()
         };
-        let instance = vec![vec![]];
-        assert_eq!(mock_prover_verify(&circuit, instance.clone()), Ok(()));
 
-        (circuit, instance)
+        circuit
     }
 
     let k = 18;
 
-    let (circuit, _) = run::<Secp256k1, BnScalar>();
+    let circuit = run::<Secp256k1, BnScalar>();
 
     // Prepare benching for verifier key generation
     let mut verifier_key_generation = c.benchmark_group("ECDSA Verifier Key Generation");
@@ -328,13 +326,6 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     }
     proof_verification.finish();
-
-    // use crate::curves::bn256::Fr as BnScalar;
-    // use crate::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
-    // use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
-    // run::<Secp256k1, BnScalar>();
-    // run::<Secp256k1, PastaFp>();
-    // run::<Secp256k1, PastaFq>();
 }
 
 criterion_group!(benches, criterion_benchmark);

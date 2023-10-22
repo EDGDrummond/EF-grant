@@ -131,7 +131,7 @@ impl<F: FieldExt> TutorialComposer<F> for TutorialChip<F> {
         FM: FnMut() -> Value<(Assigned<F>, Assigned<F>, Assigned<F>)>,
     {
         layouter.assign_region(
-            || "mul",
+            || "add",
             |mut region| {
                 let mut values = None;
                 let lhs = region.assign_advice(

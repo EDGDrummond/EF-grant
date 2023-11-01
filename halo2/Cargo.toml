@@ -12,7 +12,7 @@ ecdsa = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git"
 ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git", tag = "v2022_10_22"  }
 integer = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git", tag = "v2022_10_22"  }
 maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong.git", tag = "v2022_10_22"  }
-zkevm-circuits = { git = "https://github.com/EDGDrummond/zkevm-circuits.git" }
+zkevm-circuits = { git = "https://github.com/EDGDrummond/zkevm-circuits.git", rev="1e8637233bb53c12f1b12937e73f863c444e4e9e" }
 rayon = "1.5.1"
 rand_core = { version = "0.6", default-features = false }
 pairing = { git = 'https://github.com/EDGDrummond/pairing', package = "pairing_bn256"} 
